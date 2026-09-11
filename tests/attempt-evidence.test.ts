@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { MemoryStore } from '../src/store.js';
+test('claim alone is not initiation evidence',()=>{const s=new MemoryStore();const w=s.createWorkflow({requestId:'00000000-0000-0000-0000-000000000003',workflowType:'software',logicalSpecialistId:'x',runtimeId:'x',validationRequired:true,objective:'x',context:{},requiresImplementation:true});const c=s.claimStage(w.id,'codex','codex',undefined,'worker');assert.equal(c.attempt.state,'CLAIMED');assert.equal(w.status,'ROUTED');});

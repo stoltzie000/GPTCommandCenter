@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { assertTransition } from '../src/domain.js';
+test('rejects illegal execution bypasses and terminal reopening',()=>{for(const [a,b] of [['ROUTED','SPECIALIST_COMPLETE'],['ROUTED','CODEX_COMPLETE'],['CODEX_PROMPT_READY','CODEX_COMPLETE'],['COMPLETE','ROUTED'],['FAILED','ROUTED'],['MANUAL_HANDOFF_REQUIRED','SPECIALIST_RUNNING']] as const)assert.throws(()=>assertTransition(a,b),/INVALID_STATE_TRANSITION/);});

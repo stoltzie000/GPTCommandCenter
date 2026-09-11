@@ -1,0 +1,3 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { loadConfig } from '../src/config.js';
+test('deployed mode fails closed without token or database',()=>{assert.throws(()=>loadConfig({APP_MODE:'deployed',AUTH_MODE:'disabled'} as any),/AUTHENTICATION_REQUIRED/);assert.throws(()=>loadConfig({APP_MODE:'deployed',AUTH_MODE:'token',ORCHESTRATOR_API_TOKEN:'x'} as any),/DATABASE_REQUIRED/);});
+test('local disabled mode is explicit and valid',()=>{const c=loadConfig({APP_MODE:'local',AUTH_MODE:'disabled',ALLOWED_REPOSITORIES:'{}'} as any);assert.equal(c.authMode,'disabled');});
