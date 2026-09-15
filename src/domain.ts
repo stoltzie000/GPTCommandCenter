@@ -3,9 +3,11 @@ export type WorkflowStatus = 'CREATED'|'ROUTED'|'SPECIALIST_RUNNING'|'SPECIALIST
 export type StageType = 'specialist'|'prompt_builder'|'codex'|'validation';
 export type AttemptState = 'CLAIMED'|'STARTING'|'RUNNING'|'SUCCEEDED'|'FAILED_TO_START'|'FAILED'|'TIMED_OUT'|'CANCELLED'|'STATUS_UNKNOWN';
 export type RuntimeStatus = 'ACTIVE'|'MANUAL_ONLY'|'UNVERIFIED'|'DISABLED';
+export type RegistryReconciliationStatus = 'MATCHED'|'NEW_UNREVIEWED'|'POSSIBLE_RENAME'|'METADATA_CHANGED'|'MISSING_FROM_INVENTORY'|'DUPLICATE_OR_AMBIGUOUS'|'PROVIDER_UNAVAILABLE';
+export type RegistryFreshness = 'VERIFIED'|'UNVERIFIED';
 export type ResultKind = 'success'|'retryable_failure'|'terminal_failure';
 export interface Runtime { status: RuntimeStatus; type: 'openai_agent'; runtimeId: string; version: string; instructionRef: string; outputSchema: string; timeoutSeconds: number; maxAttempts: number; }
-export interface Specialist { specialistId: string; displayName: string; chatgptUrl?: string; runtime?: Runtime; canValidateCodex: boolean; }
+export interface Specialist { specialistId: string; displayName: string; chatgptUrl?: string; runtime?: Runtime; canValidateCodex: boolean; inventoryIdentity?: string; }
 export interface SoftwareOutput { objective:string; requirements:string[]; constraints:string[]; affected_components:string[]; security_requirements:string[]; test_requirements:string[]; acceptance_criteria:string[]; validation_required:boolean; validation_reason:string; }
 export interface CodexPrompt { task_summary:string; implementation_instructions:string; scope_constraints:string[]; tests_required:string[]; acceptance_criteria:string[]; expected_result_report:string[]; }
 export interface ValidationOutput { verdict:'PASS'|'PASS_WITH_CHANGES'|'FAIL'; blocking_findings:string[]; non_blocking_findings:string[]; remediation_requirements:string[]; }
