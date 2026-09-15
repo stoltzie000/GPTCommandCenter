@@ -3,7 +3,7 @@ import { Orchestrator } from './orchestrator.js';
 import { ApprovalStore, ClarificationStore, MemoryStore, OverrideStore, PersistenceStore } from './store.js';
 import { UnavailableCodex, UnavailableSpecialist, SafePromptBuilder, UnavailableValidation, OpenAISpecialistExecutor, OpenAIValidationExecutor, RootlessContainerCodexExecutor } from './executors.js';
 import { loadConfig } from './config.js'; import { PgStore } from './pg-store.js'; import { Classification } from './authorization.js'; import { principalForCredential, resolveRepository, validateRef, classify, freezeContext, contextFromWorkflow } from './trust.js';
-import { createSpecialistInventoryProvider } from './specialist-inventory.js'; import { reconcileSpecialistInventory } from './registry-reconciliation.js'; import { registry } from './registry.js';
+import { createSpecialistInventoryProvider } from './specialist-inventory.js'; import { publicRegistryReconciliationStatus, reconcileSpecialistInventory } from './registry-reconciliation.js'; import { registry } from './registry.js';
 const config=loadConfig();
 const store:PersistenceStore=config.appMode==='deployed'?new PgStore(config.databaseUrl):new MemoryStore();
 const specialist=process.env.OPENAI_API_KEY?new OpenAISpecialistExecutor(process.env.OPENAI_API_KEY):new UnavailableSpecialist();
@@ -14,6 +14,7 @@ function json(res:any,status:number,body:unknown){res.writeHead(status,{'content
 const server=createServer(async(req,res)=>{try{
   if(req.url==='/health'&&req.method==='GET')return json(res,200,{status:'ok'});
   if(req.url==='/ready'&&req.method==='GET'){if(config.appMode==='deployed'&&store instanceof PgStore)await store.pool.query('SELECT 1');return json(res,200,{status:'ready'});}
+  if(req.url==='/inventory-status'&&req.method==='GET')return json(res,200,publicRegistryReconciliationStatus(startupReconciliation));
   const principal=principalForCredential(config.authMode==='token'?req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):undefined:undefined,config);
   const m=req.url?.match(/^\/v1\/workflows(?:\/([^/]+)(?:\/(run|events|result|clarification|clarification-response|approval|override))?)?$/);if(!m)return json(res,404,{error:'NOT_FOUND'});
   const id=m[1],action=m[2];
@@ -34,6 +35,6 @@ const server=createServer(async(req,res)=>{try{
   return json(res,405,{error:'METHOD_NOT_ALLOWED'});
 }catch(e){const code=e instanceof Error?e.message:'INVALID_REQUEST';const status=['AUTHENTICATION_FAILED','AUTHENTICATION_REQUIRED'].includes(code)?401:['AUTHORIZATION_FAILED','REPOSITORY_NOT_ALLOWED','REPOSITORY_REF_NOT_ALLOWED','REPOSITORY_REF_INVALID'].includes(code)?403:400;const exposed=['INVALID_REQUEST','UNKNOWN_SPECIALIST','WORKFLOW_NOT_FOUND','REPOSITORY_NOT_ALLOWED','REPOSITORY_REF_NOT_ALLOWED','REPOSITORY_REF_INVALID','IDEMPOTENCY_KEY_REUSED','INVALID_OVERRIDE_TARGET','STALE_ROUTING_DECISION','OVERRIDE_STATE_UNSAFE','ROUTING_DECISION_NOT_FOUND','CLARIFICATION_NOT_FOUND','APPROVAL_NOT_FOUND'];return json(res,status,{error:exposed.includes(code)?code:status===401?'AUTHENTICATION_FAILED':'INVALID_REQUEST'});}});
 if(store instanceof PgStore)await store.pool.query('SELECT 1');
-const startupReconciliation=await reconcileSpecialistInventory(createSpecialistInventoryProvider(config.specialistInventoryProvider),registry);
+const startupReconciliation=await reconcileSpecialistInventory(createSpecialistInventoryProvider(config.specialistInventoryProvider,config.specialistInventoryFile),registry);
 console.log(JSON.stringify({event:'specialist_inventory_reconciled',freshness:startupReconciliation.freshness,outcomes:startupReconciliation.outcomes.map(outcome=>outcome.status)}));
 server.listen(Number(process.env.PORT??8080),()=>console.log(JSON.stringify({event:'server_started',port:Number(process.env.PORT??8080),mode:config.appMode})));

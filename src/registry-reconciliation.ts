@@ -78,3 +78,33 @@ export async function reconcileSpecialistInventory(provider: SpecialistInventory
   try { return reconcileRegistry(approvedRegistry, await provider.discover()); }
   catch (error) { return reconcileRegistry(approvedRegistry, { status: 'UNAVAILABLE', source: 'provider', observedAt: new Date().toISOString(), reason: error instanceof Error ? error.message : 'INVENTORY_PROVIDER_FAILED' }); }
 }
+
+export interface PublicRegistryReconciliationStatus {
+  freshness: RegistryFreshness;
+  approvedRegistryChanged: false;
+  outcomes: readonly {
+    status: RegistryReconciliationStatus;
+    specialistId?: string;
+    approvedSpecialistId?: string;
+    routable: boolean;
+    runtime: RuntimeStatus;
+    reviewRequired: boolean;
+  }[];
+}
+
+export function publicRegistryReconciliationStatus(
+  reconciliation: RegistryReconciliation
+): PublicRegistryReconciliationStatus {
+  return {
+    freshness: reconciliation.freshness,
+    approvedRegistryChanged: reconciliation.approvedRegistryChanged,
+    outcomes: reconciliation.outcomes.map(outcome => ({
+      status: outcome.status,
+      specialistId: outcome.specialistId,
+      approvedSpecialistId: outcome.approvedSpecialistId,
+      routable: outcome.routable,
+      runtime: outcome.runtime,
+      reviewRequired: outcome.reviewRequired
+    }))
+  };
+}
