@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MemoryStore} from '../src/store.js';
 import {OpenAISpecialistExecutor,OpenAIValidationExecutor,ProcessCodexExecutor,RootlessContainerCodexExecutor,createIsolatedWorkspace} from '../src/executors.js';
-import {ExecutionContext} from '../src/trust.js';
+import {ExecutionContext,freezeCreationContext} from '../src/trust.js';
 import {SafePromptBuilder} from '../src/executors.js';
 import {Orchestrator} from '../src/orchestrator.js';
 import {registry} from '../src/registry.js';
@@ -11,6 +11,15 @@ import {EventEmitter} from 'node:events';
 type Counters={specialistProviderCalls:number;promptBuilderExternalCalls:number;validationProviderCalls:number;gitCalls:number;workspaceSideEffects:number;processCodexSpawns:number;rootlessContainerSpawns:number;};
 const zero=():Counters=>({specialistProviderCalls:0,promptBuilderExternalCalls:0,validationProviderCalls:0,gitCalls:0,workspaceSideEffects:0,processCodexSpawns:0,rootlessContainerSpawns:0});
 function context(allowedCallers:readonly string[]=['caller']):ExecutionContext{return Object.freeze({principal:Object.freeze({id:'caller',roles:Object.freeze(['developer']),scopes:Object.freeze(['run']),authType:'token' as const}),operation:'run',requestId:'security-proof',workflowId:'workflow',specialistId:'architecture-security-advisor',executionType:'codex',effectiveClassification:'INTERNAL' as const,resolvedRepository:Object.freeze({repositoryId:'repo',source:'./repo',classification:'INTERNAL' as const,allowedCallers:Object.freeze(allowedCallers),allowedRefs:Object.freeze(['main']),approvedRef:'main'}),authorizationDecision:Object.freeze({allowed:true as const,ruleId:'historical-allow',decidedAt:new Date().toISOString()})});}
+function creationContext(base:ExecutionContext,requestId:string){
+  return freezeCreationContext({
+    principal:base.principal,
+    operation:'create',
+    requestId,
+    executionType:'codex',
+    effectiveClassification:base.effectiveClassification
+  },base.resolvedRepository);
+}
 function assertZero(c:Counters){assert.deepEqual(c,zero());}
 
 test('shared denial harness proves every concrete boundary has zero protected effects',async()=>{
@@ -47,7 +56,7 @@ test('real orchestration preserves trusted context through specialist, prompt, C
   try{
     const captures:ExecutionContext[]=[];
     const base=context(['caller']);
-    const createContext=Object.freeze({...base,operation:'create',workflowId:undefined,executionType:'codex'});
+    const createContext=creationContext(base,'full-chain-proof');
     const specialist={execute:async(i:any)=>{captures.push(i.trustedContext);return {kind:'success',output:{objective:'x',requirements:['implement'],constraints:[],affected_components:[],security_requirements:[],test_requirements:['test'],acceptance_criteria:['pass'],validation_required:true,validation_reason:'required'},externalExecutionId:'specialist-1'};}};
     const codex={execute:async(i:any)=>{captures.push(i.trustedContext);return {kind:'success',output:{changedFiles:[],testResults:[],resultSummary:'ok',exitCode:0},externalExecutionId:'codex-1'};}};
     const validation={execute:async(i:any)=>{captures.push(i.trustedContext);return {kind:'success',output:{verdict:'PASS',blocking_findings:[],non_blocking_findings:[],remediation_requirements:[]},externalExecutionId:'validation-1'};}};
@@ -72,9 +81,9 @@ test('RUNNING is written only after trusted initiation evidence',async()=>{
   const promptOutput={task_summary:'x',implementation_instructions:'implement',scope_constraints:[],tests_required:[],acceptance_criteria:[],expected_result_report:[]};
   const validationOutput={verdict:'PASS',blocking_findings:[],non_blocking_findings:[],remediation_requirements:[]};
   const make=async(specialist:any,codex:any,validation:any)=>{
-    const store=new MemoryStore();const base=context(['caller']);const createContext=Object.freeze({...base,operation:'create',workflowId:undefined});
+    const store=new MemoryStore();const base=context(['caller']);const requestId=`init-${Math.random()}`;const createContext=creationContext(base,requestId);
     const o=new Orchestrator(store,specialist,{execute:async()=>({kind:'success',output:promptOutput})} as any,codex,validation,{repo:base.resolvedRepository} as any);
-    const w=await o.create({context:createContext,workflowInput:{request_id:`init-${Math.random()}`,requested_specialist:'architecture-security-advisor',objective:'x',workflow_type:'software'}});
+    const w=await o.create({context:createContext,workflowInput:{request_id:requestId,requested_specialist:'architecture-security-advisor',objective:'x',workflow_type:'software'}});
     const runContext=Object.freeze({...base,workflowId:w.id,operation:'run'});await o.run(w.id,runContext);return {store,w};
   };
   try{
@@ -96,7 +105,7 @@ test('successful provider stages order authorization, initiation, then RUNNING',
     const prompt={execute:async(i:any)=>{authorized(i);return {kind:'success',output:{task_summary:'x',implementation_instructions:'x',scope_constraints:[],tests_required:[],acceptance_criteria:[],expected_result_report:[]}}}};
     const codex={execute:async(i:any)=>{authorized(i);order.push('initiated');return {kind:'success',output:{changedFiles:[],testResults:[],resultSummary:'ok',exitCode:0},externalExecutionId:'c'}}};
     const validation={execute:async(i:any)=>{authorized(i);order.push('initiated');return {kind:'success',output:{verdict:'PASS',blocking_findings:[],non_blocking_findings:[],remediation_requirements:[]},externalExecutionId:'v'}}};
-    const o=new Orchestrator(store,specialist as any,prompt as any,codex as any,validation as any,{repo:base.resolvedRepository} as any);const w=await o.create({context:Object.freeze({...base,operation:'create',workflowId:undefined}),workflowInput:{request_id:'ordering-proof',requested_specialist:'architecture-security-advisor',objective:'x',workflow_type:'software'}});await o.run(w.id,Object.freeze({...base,workflowId:w.id,operation:'run'}));
+    const o=new Orchestrator(store,specialist as any,prompt as any,codex as any,validation as any,{repo:base.resolvedRepository} as any);const w=await o.create({context:creationContext(base,'ordering-proof'),workflowInput:{request_id:'ordering-proof',requested_specialist:'architecture-security-advisor',objective:'x',workflow_type:'software'}});await o.run(w.id,Object.freeze({...base,workflowId:w.id,operation:'run'}));
     assert.deepEqual(order,['authorized','initiated','running','authorized','authorized','initiated','running','authorized','initiated','running']);
   }finally{if(specialistConfig.runtime&&previousStatus)specialistConfig.runtime.status=previousStatus;}
 });
@@ -104,7 +113,7 @@ test('successful provider stages order authorization, initiation, then RUNNING',
 test('validator failure before provider initiation does not write VALIDATION_RUNNING',async()=>{
   const specialistConfig=registry['architecture-security-advisor'];const previousStatus=specialistConfig.runtime?.status;if(specialistConfig.runtime)specialistConfig.runtime.status='ACTIVE';
   try{
-    const store=new MemoryStore();const base=context(['caller']);const specialist={execute:async()=>({kind:'success',output:{objective:'x',requirements:[],constraints:[],affected_components:[],security_requirements:[],test_requirements:[],acceptance_criteria:[],validation_required:true,validation_reason:'required'},externalExecutionId:'s'})};const prompt={execute:async()=>({kind:'success',output:{task_summary:'x',implementation_instructions:'x',scope_constraints:[],tests_required:[],acceptance_criteria:[],expected_result_report:[]}})};const codex={execute:async()=>({kind:'success',output:{changedFiles:[],testResults:[],resultSummary:'ok',exitCode:0},externalExecutionId:'c'})};let calls=0;const validation=new OpenAIValidationExecutor('secret','model',async()=>{calls++;throw new Error('before initiation');});const o=new Orchestrator(store,specialist as any,prompt as any,codex as any,validation,{repo:base.resolvedRepository} as any);const w=await o.create({context:Object.freeze({...base,operation:'create',workflowId:undefined}),workflowInput:{request_id:'validator-init-failure',requested_specialist:'architecture-security-advisor',objective:'x',workflow_type:'software'}});await o.run(w.id,Object.freeze({...base,workflowId:w.id,operation:'run'}));
+    const store=new MemoryStore();const base=context(['caller']);const specialist={execute:async()=>({kind:'success',output:{objective:'x',requirements:[],constraints:[],affected_components:[],security_requirements:[],test_requirements:[],acceptance_criteria:[],validation_required:true,validation_reason:'required'},externalExecutionId:'s'})};const prompt={execute:async()=>({kind:'success',output:{task_summary:'x',implementation_instructions:'x',scope_constraints:[],tests_required:[],acceptance_criteria:[],expected_result_report:[]}})};const codex={execute:async()=>({kind:'success',output:{changedFiles:[],testResults:[],resultSummary:'ok',exitCode:0},externalExecutionId:'c'})};let calls=0;const validation=new OpenAIValidationExecutor('secret','model',async()=>{calls++;throw new Error('before initiation');});const o=new Orchestrator(store,specialist as any,prompt as any,codex as any,validation,{repo:base.resolvedRepository} as any);const w=await o.create({context:creationContext(base,'validator-init-failure'),workflowInput:{request_id:'validator-init-failure',requested_specialist:'architecture-security-advisor',objective:'x',workflow_type:'software'}});await o.run(w.id,Object.freeze({...base,workflowId:w.id,operation:'run'}));
     assert.equal(calls,1);assert.equal(w.status,'FAILED');assert.equal(store.getEvents(w.id).some(e=>e.eventType==='WORKFLOW_VALIDATION_RUNNING'),false);const attempt=store.getAttempts(w.id).find(a=>a.logicalStageKey.startsWith('validation:'));assert.equal(attempt?.initiationEvidence,undefined);assert.equal(store.getArtifacts(w.id).some(a=>a.artifactType==='validation_result'),false);
   }finally{if(specialistConfig.runtime&&previousStatus)specialistConfig.runtime.status=previousStatus;}
 });
