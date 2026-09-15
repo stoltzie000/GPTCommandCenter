@@ -1,8 +1,50 @@
-import { Classification, RepositoryPolicy, authorize, effectiveClassification } from './authorization.js';
+import { Classification, RepositoryPolicy, authorize, authorizeCreation, effectiveClassification } from './authorization.js';
 export interface Principal { readonly id:string; readonly roles:readonly string[]; readonly scopes:readonly string[]; readonly authType:'token'|'local'; readonly maxClassification?:Classification; }
 export interface ResolvedRepositoryPolicy extends RepositoryPolicy { readonly repositoryId:string; readonly approvedRef?:string; readonly allowedRefs?:readonly string[]; readonly allowedRefPatterns?:readonly string[]; }
 export interface AuthorizationDecision { readonly allowed:true; readonly ruleId:string; readonly decidedAt:string; }
 export interface ExecutionContext { readonly principal:Principal; readonly operation:string; readonly requestId:string; readonly workflowId?:string; readonly specialistId:string; readonly executionType:string; readonly resolvedRepository?:ResolvedRepositoryPolicy; readonly effectiveClassification:Classification; readonly authorizationDecision:AuthorizationDecision; }
+export interface CreationContext { readonly principal:Principal; readonly operation:'create'; readonly requestId:string; readonly executionType:string; readonly resolvedRepository?:ResolvedRepositoryPolicy; readonly effectiveClassification:Classification; readonly authorizationDecision:AuthorizationDecision; }
+export function assertCreationContext(value:unknown):asserts value is CreationContext {
+  if(!value||typeof value!=='object')throw new Error('AUTHORIZATION_FAILED');
+  const c=value as any;
+  if(!c.principal?.id||c.operation!=='create'||!c.requestId||!c.executionType||!c.effectiveClassification||c.authorizationDecision?.allowed!==true)throw new Error('AUTHORIZATION_FAILED');
+  if('specialistId' in c&&c.specialistId!==undefined)throw new Error('AUTHORIZATION_FAILED');
+  if(c.resolvedRepository&&!c.resolvedRepository.repositoryId)throw new Error('REPOSITORY_NOT_ALLOWED');
+}
+export function assertAuthorizedCreation(value:unknown):asserts value is CreationContext {
+  assertCreationContext(value);
+  const c=value as CreationContext;
+  authorizeCreation({
+    caller:c.principal.id,
+    operation:'create',
+    repositoryId:c.resolvedRepository?.repositoryId,
+    executionType:c.executionType,
+    dataClassification:c.effectiveClassification,
+    principalMaxClassification:c.principal.maxClassification,
+    repository:c.resolvedRepository
+  });
+}
+export function freezeCreationContext(input:Omit<CreationContext,'authorizationDecision'>,repo?:ResolvedRepositoryPolicy):Readonly<CreationContext>{
+  authorizeCreation({
+    caller:input.principal.id,
+    operation:'create',
+    repositoryId:repo?.repositoryId,
+    executionType:input.executionType,
+    dataClassification:input.effectiveClassification,
+    principalMaxClassification:input.principal.maxClassification,
+    repository:repo
+  });
+  return Object.freeze({
+    ...input,
+    resolvedRepository:repo,
+    authorizationDecision:Object.freeze({
+      allowed:true,
+      ruleId:'default-allow',
+      decidedAt:new Date().toISOString()
+    })
+  });
+}
+
 export function assertExecutionContext(value:unknown):asserts value is ExecutionContext { if(!value||typeof value!=='object')throw new Error('AUTHORIZATION_FAILED');const c=value as any;if(!c.principal?.id||!c.operation||!c.requestId||!c.specialistId||!c.executionType||!c.effectiveClassification||c.authorizationDecision?.allowed!==true)throw new Error('AUTHORIZATION_FAILED');if(c.resolvedRepository&&!c.resolvedRepository.repositoryId)throw new Error('REPOSITORY_NOT_ALLOWED'); }
 export function assertAuthorizedExecution(value:unknown):asserts value is ExecutionContext { assertExecutionContext(value); const c=value as ExecutionContext; authorize({caller:c.principal.id,operation:c.operation,specialistId:c.specialistId,repositoryId:c.resolvedRepository?.repositoryId,executionType:c.executionType,dataClassification:c.effectiveClassification,principalMaxClassification:c.principal.maxClassification,repository:c.resolvedRepository}); }
 export function freezeContext(input:Omit<ExecutionContext,'authorizationDecision'>,repo?:ResolvedRepositoryPolicy):Readonly<ExecutionContext>{const decision=authorize({caller:input.principal.id,operation:input.operation,specialistId:input.specialistId,repositoryId:repo?.repositoryId,executionType:input.executionType,dataClassification:input.effectiveClassification,principalMaxClassification:input.principal.maxClassification,repository:repo});return Object.freeze({...input,resolvedRepository:repo,authorizationDecision:Object.freeze({allowed:true,ruleId:'default-allow',decidedAt:new Date().toISOString()})});}
