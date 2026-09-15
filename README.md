@@ -14,7 +14,7 @@ Greenfield TypeScript/Node service implementing evidence-gated specialist → Co
 
 ## Run
 
-`npm install`, copy `.env.example` to `.env`, then apply `db/migrations/001_initial.sql`, `db/migrations/002_task22c_routing_history.sql`, `db/migrations/003_task22d_clarifications.sql`, and `db/migrations/004_task22e_approvals.sql`, run `npm run build`, and `npm start`. `npm test` runs the state/evidence tests. `POST /v1/workflows`, `POST /v1/workflows/:id/run`, `GET /v1/workflows/:id`, `/events`, `/result`, clarification read/response routes, and approval read/decision routes are implemented, plus `/health` and `/ready`.
+`npm install`, copy `.env.example` to `.env`, then apply `db/migrations/001_initial.sql`, `db/migrations/002_task22c_routing_history.sql`, `db/migrations/003_task22d_clarifications.sql`, `db/migrations/004_task22e_approvals.sql`, and `db/migrations/005_task22h_override_clarification.sql`, run `npm run build`, and `npm start`. `npm test` runs the state/evidence tests. `POST /v1/workflows`, `POST /v1/workflows/:id/run`, `GET /v1/workflows/:id`, `/events`, `/result`, clarification read/response routes, and approval read/decision routes are implemented, plus `/health` and `/ready`.
 
 ## Security and limitations
 
