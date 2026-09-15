@@ -50,8 +50,9 @@ export interface PersistenceStore {
   exclusive?<T>(id:string,fn:()=>Promise<T>):Promise<T>;
 }
 
-export class MemoryStore implements PersistenceStore {
+export class MemoryStore implements PersistenceStore,RoutingHistoryStore,RoutingResolutionStore {
   workflows=new Map<string,Workflow>(); stages=new Map<string,Stage>(); attempts=new Map<string,Attempt>(); artifacts=new Map<string,Artifact>(); events=new Map<string,Event[]>(); idem=new Map<string,RequestIdempotency>(); locks=new Map<string,Promise<void>>();
+  routingDecisions=new Map<string,RoutingDecision>(); routingCandidates=new Map<string,RoutingCandidate[]>(); routingClarifications=new Map<string,RoutingClarification>();
   async exclusive<T>(id:string,fn:()=>Promise<T>):Promise<T>{const prior=this.locks.get(id)??Promise.resolve();let release!:()=>void;const current=new Promise<void>(r=>release=r);this.locks.set(id,prior.then(()=>current));await prior;try{return await fn();}finally{release();if(this.locks.get(id)===current)this.locks.delete(id);}}
   createWorkflow(input:Omit<Workflow,'id'|'status'|'version'|'createdAt'|'updatedAt'>,callerId='local',operation='create',key=input.requestId,requestHash=hash(input)){const ik=`${callerId}:${operation}:${key}`;const old=this.idem.get(ik);if(old){if(old.requestHash!==requestHash)throw new Error('IDEMPOTENCY_KEY_REUSED');return this.workflows.get(old.workflowId)!;}const existing=[...this.workflows.values()].find(w=>w.requestId===input.requestId);if(existing)return existing;const now=new Date().toISOString();const w:Workflow={...input,id:randomUUID(),status:'CREATED',version:0,createdAt:now,updatedAt:now};this.workflows.set(w.id,w);this.events.set(w.id,[]);if(w.logicalSpecialistId)this.transitionWorkflow(w,'ROUTED','system','router',{runtimeDisposition:'resolved'});this.idem.set(ik,{callerId,operation,key,requestHash,workflowId:w.id});return w;}
   getWorkflow(id:string){return this.workflows.get(id);}
@@ -67,6 +68,48 @@ export class MemoryStore implements PersistenceStore {
   getArtifacts(id:string){return [...this.artifacts.values()].filter(x=>x.workflowId===id);}
   appendEvent(input:Omit<Event,'id'|'sequence'|'createdAt'>){const list=this.events.get(input.workflowId)??[];const e={...input,id:randomUUID(),sequence:list.length+1,createdAt:new Date().toISOString()};list.push(e);this.events.set(input.workflowId,list);return e;}
   getEvents(id:string){return this.events.get(id)??[];}
+  recordRoutingDecision(decision:RoutingDecision){this.routingDecisions.set(decision.id,decision);return Promise.resolve(decision);}
+  recordRoutingCandidates(candidates:RoutingCandidate[]){for(const candidate of candidates){const list=this.routingCandidates.get(candidate.routingDecisionId)??[];list.push(candidate);this.routingCandidates.set(candidate.routingDecisionId,list);}return Promise.resolve(candidates);}
+  async recordRoutingDecisionWithCandidates(decision:RoutingDecision,candidates:RoutingCandidate[]){await this.recordRoutingDecision(decision);await this.recordRoutingCandidates(candidates);return {decision,candidates};}
+  getRoutingDecision(id:string){return Promise.resolve(this.routingDecisions.get(id));}
+  getRoutingCandidates(decisionId:string){return Promise.resolve([...(this.routingCandidates.get(decisionId)??[])].sort((a,b)=>a.rank-b.rank));}
+  getRoutingHistory(workflowId:string){return Promise.resolve([...this.routingDecisions.values()].filter(x=>x.workflowId===workflowId).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id)));}
+  async getLatestRoutingDecision(workflowId:string){const history=await this.getRoutingHistory(workflowId);const superseded=new Set(history.map(x=>x.supersedesDecisionId).filter((x):x is string=>!!x));return [...history].reverse().find(x=>!superseded.has(x.id));}
+  async persistRoutingResolution(decision:RoutingDecision,candidates:RoutingCandidate[],clarificationQuestion?:string){
+    const workflow=this.workflows.get(decision.workflowId);
+    if(!workflow)throw new Error('WORKFLOW_NOT_FOUND');
+
+    await this.recordRoutingDecisionWithCandidates(decision,candidates);
+
+    if(decision.routingConfidence==='AMBIGUOUS'){
+      if(!clarificationQuestion?.trim())throw new Error('CLARIFICATION_QUESTION_REQUIRED');
+      const clarification:RoutingClarification={
+        id:randomUUID(),
+        workflowId:workflow.id,
+        routingDecisionId:decision.id,
+        question:clarificationQuestion.trim(),
+        status:'PENDING',
+        response:null,
+        createdAt:new Date().toISOString(),
+        answeredAt:null
+      };
+      this.routingClarifications.set(clarification.id,clarification);
+      this.transitionWorkflow(workflow,'AWAITING_CLARIFICATION','system','routing-clarification',{clarificationId:clarification.id,routingDecisionId:decision.id});
+      return {decision,candidates,clarification,workflow};
+    }
+
+    if(workflow.status==='CREATED'&&decision.routingConfidence!=='NO_MATCH'){
+      if(!decision.selectedSpecialistId)throw new Error('ROUTING_SPECIALIST_REQUIRED');
+      const {resolveSpecialist}=await import('./registry.js');
+      const target=resolveSpecialist(decision.selectedSpecialistId);
+      if(!target||target.status!=='ACTIVE')throw new Error('INVALID_ROUTING_TARGET');
+      workflow.logicalSpecialistId=target.specialistId;
+      workflow.runtimeId=target.runtime?.runtimeId;
+      this.transitionWorkflow(workflow,'ROUTED','system','router',{routingDecisionId:decision.id,routingConfidence:decision.routingConfidence});
+    }
+
+    return {decision,candidates,workflow};
+  }
   getRequestIdempotency(callerId:string,operation:string,key:string){return this.idem.get(`${callerId}:${operation}:${key}`);}
   reconstructWorkflow(id:string){return {workflow:this.getWorkflow(id),stages:this.getStages(id),attempts:this.getAttempts(id),artifacts:this.getArtifacts(id),events:this.getEvents(id)};}
 }
