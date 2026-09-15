@@ -22,3 +22,22 @@ Registry entries are server-controlled; ChatGPT URLs are navigation-only. Client
 ## Task 22H user overrides
 
 `POST /v1/workflows/:workflowId/override` validates a canonical active logical specialist and records a `USER_OVERRIDE` routing decision that supersedes the current route. The prior routing history and registry metadata remain unchanged; the override updates only the current workflow projection and never executes a specialist. Overrides may select a `MANUAL_ONLY` runtime and preserve the normal clarification and approval gates. An ambiguous clarification resolved by override is retained as historical `SUPERSEDED` clarification data.
+
+## Specialist inventory
+
+Specialist inventory discovery is configured with:
+
+SPECIALIST_INVENTORY_PROVIDER=none|file
+SPECIALIST_INVENTORY_FILE=/path/to/inventory.json
+
+Operational endpoints:
+
+GET /inventory-status
+GET /ready
+
+Readiness behavior:
+
+- `none` + `UNVERIFIED` -> ready
+- `file` + `VERIFIED` -> ready
+- `file` + `UNVERIFIED` -> `503 not_ready`
+- discovered specialists are never auto-approved or auto-routable
