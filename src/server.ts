@@ -3,7 +3,7 @@ import { Orchestrator } from './orchestrator.js';
 import { ApprovalStore, ClarificationStore, MemoryStore, OverrideStore, PersistenceStore } from './store.js';
 import { UnavailableCodex, UnavailableSpecialist, SafePromptBuilder, UnavailableValidation, OpenAISpecialistExecutor, OpenAIValidationExecutor, RootlessContainerCodexExecutor } from './executors.js';
 import { loadConfig } from './config.js'; import { PgStore } from './pg-store.js'; import { Classification } from './authorization.js'; import { principalForCredential, resolveRepository, validateRef, classify, freezeContext, contextFromWorkflow } from './trust.js';
-import { createSpecialistInventoryProvider } from './specialist-inventory.js'; import { publicRegistryReconciliationStatus, reconcileSpecialistInventory } from './registry-reconciliation.js'; import { registry } from './registry.js';
+import { createSpecialistInventoryProvider } from './specialist-inventory.js'; import { inventoryReadiness, publicRegistryReconciliationStatus, reconcileSpecialistInventory } from './registry-reconciliation.js'; import { registry } from './registry.js';
 const config=loadConfig();
 const store:PersistenceStore=config.appMode==='deployed'?new PgStore(config.databaseUrl):new MemoryStore();
 const specialist=process.env.OPENAI_API_KEY?new OpenAISpecialistExecutor(process.env.OPENAI_API_KEY):new UnavailableSpecialist();
@@ -13,7 +13,14 @@ const app=new Orchestrator(store,specialist,new SafePromptBuilder(),codex,valida
 function json(res:any,status:number,body:unknown){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}
 const server=createServer(async(req,res)=>{try{
   if(req.url==='/health'&&req.method==='GET')return json(res,200,{status:'ok'});
-  if(req.url==='/ready'&&req.method==='GET'){if(config.appMode==='deployed'&&store instanceof PgStore)await store.pool.query('SELECT 1');return json(res,200,{status:'ready'});}
+  if(req.url==='/ready'&&req.method==='GET'){
+    if(config.appMode==='deployed'&&store instanceof PgStore)await store.pool.query('SELECT 1');
+    const readiness=inventoryReadiness(config.specialistInventoryProvider,startupReconciliation.freshness);
+    if(!readiness.ready){
+      return json(res,503,{status:'not_ready',inventoryFreshness:readiness.inventoryFreshness});
+    }
+    return json(res,200,{status:'ready',inventoryFreshness:readiness.inventoryFreshness});
+  }
   if(req.url==='/inventory-status'&&req.method==='GET')return json(res,200,publicRegistryReconciliationStatus(startupReconciliation));
   const principal=principalForCredential(config.authMode==='token'?req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):undefined:undefined,config);
   const m=req.url?.match(/^\/v1\/workflows(?:\/([^/]+)(?:\/(run|events|result|clarification|clarification-response|approval|override))?)?$/);if(!m)return json(res,404,{error:'NOT_FOUND'});

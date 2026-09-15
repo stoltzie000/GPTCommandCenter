@@ -169,3 +169,33 @@ test('Task 22J public status preserves provider unavailability', async () => {
   assert.equal(publicStatus.outcomes[0].status, 'PROVIDER_UNAVAILABLE');
   assert.equal(publicStatus.outcomes[0].routable, false);
 });
+
+test('Task 22J readiness allows explicit none provider when inventory is unverified', async () => {
+  const { inventoryReadiness } =
+    await import('../src/registry-reconciliation.js');
+
+  assert.deepEqual(
+    inventoryReadiness('none', 'UNVERIFIED'),
+    { ready: true, inventoryFreshness: 'UNVERIFIED' }
+  );
+});
+
+test('Task 22J readiness allows verified configured file inventory', async () => {
+  const { inventoryReadiness } =
+    await import('../src/registry-reconciliation.js');
+
+  assert.deepEqual(
+    inventoryReadiness('file', 'VERIFIED'),
+    { ready: true, inventoryFreshness: 'VERIFIED' }
+  );
+});
+
+test('Task 22J readiness fails closed when configured file inventory is unverified', async () => {
+  const { inventoryReadiness } =
+    await import('../src/registry-reconciliation.js');
+
+  assert.deepEqual(
+    inventoryReadiness('file', 'UNVERIFIED'),
+    { ready: false, inventoryFreshness: 'UNVERIFIED' }
+  );
+});

@@ -108,3 +108,18 @@ export function publicRegistryReconciliationStatus(
     }))
   };
 }
+
+export interface ReadinessInventoryState {
+  ready: boolean;
+  inventoryFreshness: RegistryFreshness;
+}
+
+export function inventoryReadiness(
+  provider: 'none' | 'file',
+  freshness: RegistryFreshness
+): ReadinessInventoryState {
+  return {
+    ready: provider === 'none' || freshness === 'VERIFIED',
+    inventoryFreshness: freshness
+  };
+}
