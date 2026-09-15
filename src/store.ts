@@ -1,9 +1,38 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Artifact, Attempt, AttemptState, Stage, StageType, Workflow, WorkflowStatus, assertTransition } from './domain.js';
+import { ApprovalRequest, Artifact, Attempt, AttemptState, RoutingCandidate, RoutingClarification, RoutingDecision, Stage, StageType, Workflow, WorkflowStatus, assertTransition } from './domain.js';
 
 export interface Event { id:string; workflowId:string; sequence:number; eventType:string; actorType:string; actorId:string; stageId?:string; metadata?:unknown; createdAt:string; }
 export interface RequestIdempotency { callerId:string; operation:string; key:string; requestHash:string; workflowId:string; resultReference?:string; }
 export interface StageClaim { stage:Stage; attempt:Attempt; existing:boolean; }
+export interface RoutingHistoryStore {
+  recordRoutingDecision(decision:RoutingDecision):Promise<RoutingDecision>;
+  recordRoutingCandidates(candidates:RoutingCandidate[]):Promise<RoutingCandidate[]>;
+  recordRoutingDecisionWithCandidates(decision:RoutingDecision,candidates:RoutingCandidate[]):Promise<{decision:RoutingDecision; candidates:RoutingCandidate[]}>;
+  getRoutingDecision(id:string):Promise<RoutingDecision|undefined>;
+  getRoutingCandidates(decisionId:string):Promise<RoutingCandidate[]>;
+  getRoutingHistory(workflowId:string):Promise<RoutingDecision[]>;
+  getLatestRoutingDecision(workflowId:string):Promise<RoutingDecision|undefined>;
+}
+export interface RoutingResolutionStore { persistRoutingResolution(decision:RoutingDecision,candidates:RoutingCandidate[],clarificationQuestion?:string):Promise<{decision:RoutingDecision;candidates:RoutingCandidate[];clarification?:RoutingClarification;workflow:Workflow}>; }
+export interface ClarificationStore {
+  createPendingClarification(input:Omit<RoutingClarification,'id'|'status'|'response'|'createdAt'|'answeredAt'>):Promise<RoutingClarification>;
+  getClarification(id:string):Promise<RoutingClarification|undefined>;
+  getPendingClarification(workflowId:string):Promise<RoutingClarification|undefined>;
+  getClarificationHistory(workflowId:string):Promise<RoutingClarification[]>;
+  recordClarificationResponse(id:string,response:string):Promise<RoutingClarification>;
+  resumeClarification(workflowId:string,clarificationId:string,decision:RoutingDecision,candidates:RoutingCandidate[]):Promise<{clarification:RoutingClarification;decision:RoutingDecision;candidates:RoutingCandidate[];workflow:Workflow}>;
+}
+export interface ApprovalStore {
+  createPendingApproval(input:Omit<ApprovalRequest,'id'|'status'|'decisionReason'|'decidedBy'|'createdAt'|'decidedAt'>):Promise<ApprovalRequest>;
+  getApproval(id:string):Promise<ApprovalRequest|undefined>;
+  getPendingApproval(workflowId:string,protectedActionId?:string):Promise<ApprovalRequest|undefined>;
+  getApprovalHistory(workflowId:string):Promise<ApprovalRequest[]>;
+  decideApproval(id:string,status:'APPROVED'|'REJECTED',decisionReason?:string,decidedBy?:string):Promise<ApprovalRequest>;
+  getApprovedApproval(workflowId:string,protectedActionId:string,scopeFingerprint?:string):Promise<ApprovalRequest|undefined>;
+}
+export interface OverrideStore {
+  applyUserOverride(workflowId:string,targetSpecialistId:string,reason?:string,actorId?:string,expectedDecisionId?:string):Promise<{workflow:Workflow;decision:RoutingDecision;previousDecision:RoutingDecision;candidates:RoutingCandidate[]}>;
+}
 export interface PersistenceStore {
   createWorkflow(input:Omit<Workflow,'id'|'status'|'version'|'createdAt'|'updatedAt'>, callerId?:string, operation?:string, key?:string, requestHash?:string):Workflow|Promise<Workflow>;
   getWorkflow(id:string):Workflow|undefined|Promise<Workflow|undefined>;
@@ -28,7 +57,7 @@ export class MemoryStore implements PersistenceStore {
   getWorkflow(id:string){return this.workflows.get(id);}
   getStages(id:string){return [...this.stages.values()].filter(x=>x.workflowId===id);}
   getAttempts(id:string){return [...this.attempts.values()].filter(x=>x.workflowId===id);}
-  claimStage(workflowId:string,key:string,stageType:StageType,runtimeId:string|undefined,ownerId:string){const existing=[...this.stages.values()].find(x=>x.workflowId===workflowId&&x.logicalStageKey===key);if(existing){const active=this.getAttempts(workflowId).find(a=>a.stageId===existing.id&&!['SUCCEEDED','FAILED','FAILED_TO_START','TIMED_OUT','CANCELLED'].includes(a.state));if(active)return {stage:existing,attempt:active,existing:true};if(existing.status==='COMPLETE')return {stage:existing,attempt:this.getAttempts(workflowId).find(a=>a.stageId===existing.id)! ,existing:true};}const stage=existing??{id:randomUUID(),workflowId,stageType,logicalStageKey:key,runtimeId,status:'PENDING' as const,attempt:0};if(!existing)this.stages.set(stage.id,stage);const n=this.getAttempts(workflowId).filter(a=>a.stageId===stage.id).length+1;const attempt:Attempt={id:randomUUID(),workflowId,stageId:stage.id,logicalStageKey:key,attemptNumber:n,ownerId,state:'CLAIMED'};this.attempts.set(attempt.id,attempt);stage.attempt=n;return {stage,attempt,existing:false};}
+  claimStage(workflowId:string,key:string,stageType:StageType,runtimeId:string|undefined,ownerId:string){const status=this.workflows.get(workflowId)?.status;if(status==='AWAITING_CLARIFICATION')throw new Error('CLARIFICATION_REQUIRED');if(status==='AWAITING_APPROVAL')throw new Error('APPROVAL_REQUIRED');const existing=[...this.stages.values()].find(x=>x.workflowId===workflowId&&x.logicalStageKey===key);if(existing){const active=this.getAttempts(workflowId).find(a=>a.stageId===existing.id&&!['SUCCEEDED','FAILED','FAILED_TO_START','TIMED_OUT','CANCELLED'].includes(a.state));if(active)return {stage:existing,attempt:active,existing:true};if(existing.status==='COMPLETE')return {stage:existing,attempt:this.getAttempts(workflowId).find(a=>a.stageId===existing.id)! ,existing:true};}const stage=existing??{id:randomUUID(),workflowId,stageType,logicalStageKey:key,runtimeId,status:'PENDING' as const,attempt:0};if(!existing)this.stages.set(stage.id,stage);const n=this.getAttempts(workflowId).filter(a=>a.stageId===stage.id).length+1;const attempt:Attempt={id:randomUUID(),workflowId,stageId:stage.id,logicalStageKey:key,attemptNumber:n,ownerId,state:'CLAIMED'};this.attempts.set(attempt.id,attempt);stage.attempt=n;return {stage,attempt,existing:false};}
   recordInitiation(_workflowId:string,attemptId:string,evidence:unknown,ownerId?:string){const a=this.attempts.get(attemptId)!;if(ownerId&&a.ownerId!==ownerId)throw new Error('ATTEMPT_NOT_OWNER');a.state='RUNNING';a.initiationEvidence=evidence;return a;}
   completeStage(_workflowId:string,attemptId:string,externalExecutionId:string|undefined,artifactId:string|undefined,evidence:unknown,ownerId?:string){const a=this.attempts.get(attemptId)!;if(ownerId&&a.ownerId!==ownerId)throw new Error('ATTEMPT_NOT_OWNER');a.state='SUCCEEDED';a.terminalEvidence={evidence,externalExecutionId,artifactId};const s=this.stages.get(a.stageId)!;s.status='COMPLETE';s.externalExecutionId=externalExecutionId;s.outputArtifactId=artifactId;s.evidence=evidence;return a;}
   failStage(_workflowId:string,attemptId:string,state:AttemptState,evidence?:unknown,ownerId?:string){const a=this.attempts.get(attemptId)!;if(ownerId&&a.ownerId!==ownerId)throw new Error('ATTEMPT_NOT_OWNER');a.state=state;a.terminalEvidence=evidence;this.stages.get(a.stageId)!.status='FAILED';return a;}

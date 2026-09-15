@@ -1,13 +1,36 @@
 export type WorkflowType = 'software' | 'non_code';
-export type WorkflowStatus = 'CREATED'|'ROUTED'|'SPECIALIST_RUNNING'|'SPECIALIST_COMPLETE'|'CODEX_PROMPT_READY'|'CODEX_RUNNING'|'CODEX_COMPLETE'|'VALIDATION_RUNNING'|'COMPLETE'|'FAILED'|'MANUAL_HANDOFF_REQUIRED';
+export type WorkflowStatus = 'CREATED'|'ROUTED'|'AWAITING_CLARIFICATION'|'AWAITING_APPROVAL'|'SPECIALIST_RUNNING'|'SPECIALIST_COMPLETE'|'CODEX_PROMPT_READY'|'CODEX_RUNNING'|'CODEX_COMPLETE'|'VALIDATION_RUNNING'|'COMPLETE'|'FAILED'|'MANUAL_HANDOFF_REQUIRED';
 export type StageType = 'specialist'|'prompt_builder'|'codex'|'validation';
 export type AttemptState = 'CLAIMED'|'STARTING'|'RUNNING'|'SUCCEEDED'|'FAILED_TO_START'|'FAILED'|'TIMED_OUT'|'CANCELLED'|'STATUS_UNKNOWN';
 export type RuntimeStatus = 'ACTIVE'|'MANUAL_ONLY'|'UNVERIFIED'|'DISABLED';
 export type RegistryReconciliationStatus = 'MATCHED'|'NEW_UNREVIEWED'|'POSSIBLE_RENAME'|'METADATA_CHANGED'|'MISSING_FROM_INVENTORY'|'DUPLICATE_OR_AMBIGUOUS'|'PROVIDER_UNAVAILABLE';
 export type RegistryFreshness = 'VERIFIED'|'UNVERIFIED';
+export const RUNTIME_STATUSES = ['ACTIVE','MANUAL_ONLY','UNVERIFIED','DISABLED'] as const;
+export type SpecialistStatus = 'ACTIVE'|'INACTIVE'|'DEPRECATED';
+export const SPECIALIST_STATUSES = ['ACTIVE','INACTIVE','DEPRECATED'] as const;
 export type ResultKind = 'success'|'retryable_failure'|'terminal_failure';
 export interface Runtime { status: RuntimeStatus; type: 'openai_agent'; runtimeId: string; version: string; instructionRef: string; outputSchema: string; timeoutSeconds: number; maxAttempts: number; }
-export interface Specialist { specialistId: string; displayName: string; chatgptUrl?: string; runtime?: Runtime; canValidateCodex: boolean; inventoryIdentity?: string; }
+export const ROUTING_CONFIDENCES = ['CLEAR','PROBABLE','AMBIGUOUS','NO_MATCH'] as const;
+export type RoutingConfidence = typeof ROUTING_CONFIDENCES[number];
+export const ROUTING_DECISION_TYPES = ['INITIAL','POST_CLARIFICATION','USER_OVERRIDE','DOWNSTREAM_ROUTE','FALLBACK'] as const;
+export type RoutingDecisionType = typeof ROUTING_DECISION_TYPES[number];
+export interface RoutingDecision { id:string; workflowId:string; selectedSpecialistId:string|null; routingConfidence:RoutingConfidence; routingReason:string; decisionType:RoutingDecisionType; supersedesDecisionId:string|null; createdAt:string; }
+export interface RoutingCandidate { id:string; routingDecisionId:string; specialistId:string; rank:number; matchReason:string; }
+export interface TaskInterpretation { intent:string; requestedOutcome:string; taskCategories:string[]; requiredCapabilities:string[]; excludedCapabilities:string[]; inputTypes:string[]; expectedOutputTypes:string[]; workflowContext:{currentSpecialistId?:string; stageKey?:string; routeType?:RoutingDecisionType}; repositoryContext?:{repositoryId?:string; ref?:string}; requiresCurrentInformation:boolean; requiresExecutableRuntime:boolean; explicitSpecialistRequest?:string; }
+export interface CandidateEvidence { specialistId:string; registryVersion:string; ownershipMatches:string[]; capabilityMatches:string[]; workflowRelationship:'upstream'|'downstream'|'current'|'none'; exclusionResult:'eligible'; specificity:number; runtimeStatus:RuntimeStatus; matchReason:string; }
+export interface SelectedCandidate { specialistId:string; rank:number; matchReason:string; evidence:CandidateEvidence; }
+export interface RoutingResolution { routingConfidence:RoutingConfidence; selectedSpecialistId:string|null; routingReason:string; candidates:SelectedCandidate[]; requiresClarification:boolean; clarificationQuestion?:string; }
+export const ROUTING_CLARIFICATION_STATUSES = ['PENDING','ANSWERED','SUPERSEDED'] as const;
+export type RoutingClarificationStatus = typeof ROUTING_CLARIFICATION_STATUSES[number];
+export interface RoutingClarification { id:string; workflowId:string; routingDecisionId:string; question:string; status:RoutingClarificationStatus; response:string|null; createdAt:string; answeredAt:string|null; }
+export const APPROVAL_STATUSES = ['PENDING','APPROVED','REJECTED'] as const;
+export type ApprovalStatus = typeof APPROVAL_STATUSES[number];
+export interface ApprovalRequest { id:string; workflowId:string; protectedActionId:string; scopeFingerprint:string; reason:string; categories:MaterialApprovalCategory[]; status:ApprovalStatus; decisionReason:string|null; decidedBy:string|null; createdAt:string; decidedAt:string|null; }
+export const MATERIAL_APPROVAL_CATEGORIES = ['SCOPE','AUTHORITY','COST','EXTERNAL_ACCESS','SECURITY_PRIVACY','EXECUTION_RISK'] as const;
+export type MaterialApprovalCategory = typeof MATERIAL_APPROVAL_CATEGORIES[number];
+export type NoMatchFallbackStep = 'NO_MATCH'|'FOCUSED_CLARIFICATION'|'APPROVED_GENERAL_FALLBACK'|'EXPLICIT_NO_OWNER_RESULT';
+export const NO_MATCH_FALLBACK_ORDER: readonly NoMatchFallbackStep[] = ['NO_MATCH','FOCUSED_CLARIFICATION','APPROVED_GENERAL_FALLBACK','EXPLICIT_NO_OWNER_RESULT'];
+export interface Specialist { id: string; specialistId: string; displayName: string; description:string; primaryOwnership:string[]; capabilities:string[]; exclusions:string[]; overlapsWith:string[]; upstreamSpecialists:string[]; downstreamSpecialists:string[]; status:SpecialistStatus; runtimeStatus:RuntimeStatus; runtimeId:string|null; registryVersion:string; lastReviewedAt:string; chatgptUrl?: string; runtime?: Runtime; canValidateCodex: boolean; inventoryIdentity?: string; }
 export interface SoftwareOutput { objective:string; requirements:string[]; constraints:string[]; affected_components:string[]; security_requirements:string[]; test_requirements:string[]; acceptance_criteria:string[]; validation_required:boolean; validation_reason:string; }
 export interface CodexPrompt { task_summary:string; implementation_instructions:string; scope_constraints:string[]; tests_required:string[]; acceptance_criteria:string[]; expected_result_report:string[]; }
 export interface ValidationOutput { verdict:'PASS'|'PASS_WITH_CHANGES'|'FAIL'; blocking_findings:string[]; non_blocking_findings:string[]; remediation_requirements:string[]; }
@@ -16,7 +39,7 @@ export interface Attempt { id:string; workflowId:string; stageId:string; logical
 export interface Artifact { id:string; workflowId:string; artifactType:string; contentType:string; contentJson:unknown; contentHash:string; }
 export interface Workflow { id:string; requestId:string; workflowType:WorkflowType; logicalSpecialistId:string; runtimeId?:string; status:WorkflowStatus; validationRequired?:boolean; effectiveClassification?:'PUBLIC'|'INTERNAL'|'CONFIDENTIAL'|'RESTRICTED'; objective:string; context:unknown; requiresImplementation:boolean; failureCode?:string; failureMessage?:string; version:number; createdAt:string; updatedAt:string; }
 export const LEGAL: Record<WorkflowStatus, WorkflowStatus[]> = {
-  CREATED:['ROUTED'], ROUTED:['SPECIALIST_RUNNING','MANUAL_HANDOFF_REQUIRED','FAILED'], SPECIALIST_RUNNING:['SPECIALIST_COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], SPECIALIST_COMPLETE:['CODEX_PROMPT_READY','COMPLETE','FAILED'], CODEX_PROMPT_READY:['CODEX_RUNNING','FAILED'], CODEX_RUNNING:['CODEX_COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], CODEX_COMPLETE:['VALIDATION_RUNNING','COMPLETE','FAILED'], VALIDATION_RUNNING:['COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], COMPLETE:[], FAILED:[], MANUAL_HANDOFF_REQUIRED:[]
+  CREATED:['ROUTED'], ROUTED:['AWAITING_CLARIFICATION','AWAITING_APPROVAL','SPECIALIST_RUNNING','MANUAL_HANDOFF_REQUIRED','FAILED'], AWAITING_CLARIFICATION:['ROUTED','FAILED','MANUAL_HANDOFF_REQUIRED'], AWAITING_APPROVAL:['ROUTED','FAILED','MANUAL_HANDOFF_REQUIRED'], SPECIALIST_RUNNING:['SPECIALIST_COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], SPECIALIST_COMPLETE:['CODEX_PROMPT_READY','COMPLETE','FAILED'], CODEX_PROMPT_READY:['CODEX_RUNNING','FAILED'], CODEX_RUNNING:['CODEX_COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], CODEX_COMPLETE:['VALIDATION_RUNNING','COMPLETE','FAILED'], VALIDATION_RUNNING:['COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], COMPLETE:[], FAILED:[], MANUAL_HANDOFF_REQUIRED:[]
 };
 export function assertTransition(from:WorkflowStatus,to:WorkflowStatus) { if (!LEGAL[from].includes(to)) throw new Error('INVALID_STATE_TRANSITION'); }
 export function isObject(v:unknown): v is Record<string,unknown> { return !!v && typeof v === 'object' && !Array.isArray(v); }

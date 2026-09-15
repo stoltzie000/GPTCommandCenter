@@ -1,5 +1,13 @@
-import { RegistryFreshness, RegistryReconciliationStatus, RuntimeStatus, Specialist } from './domain.js';
+import { RegistryFreshness, RegistryReconciliationStatus, Runtime, RuntimeStatus } from './domain.js';
 import { DiscoveredSpecialist, SpecialistInventoryProvider, SpecialistInventoryResult } from './specialist-inventory.js';
+
+export interface ApprovedRegistrySpecialist {
+  specialistId: string;
+  displayName: string;
+  chatgptUrl?: string;
+  runtime?: Runtime;
+  inventoryIdentity?: string;
+}
 
 export interface ReconciliationOutcome {
   status: RegistryReconciliationStatus;
@@ -18,18 +26,18 @@ export interface RegistryReconciliation {
   freshness: RegistryFreshness;
   outcomes: readonly ReconciliationOutcome[];
   approvedRegistryChanged: false;
-  approvedRegistrySnapshot: Readonly<Record<string, Specialist>>;
+  approvedRegistrySnapshot: Readonly<Record<string, ApprovedRegistrySpecialist>>;
 }
 
 const normalized = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
-const sameMetadata = (approved: Specialist, discovered: DiscoveredSpecialist) =>
+const sameMetadata = (approved: ApprovedRegistrySpecialist, discovered: DiscoveredSpecialist) =>
   approved.displayName === discovered.displayName && approved.chatgptUrl === discovered.chatgptUrl;
 const unreviewed = (status: RegistryReconciliationStatus, discovered: DiscoveredSpecialist, approvedSpecialistId?: string): ReconciliationOutcome => ({
   status, specialistId: discovered.specialistId, approvedSpecialistId, discovered,
   routable: false, ownership: 'UNASSIGNED', capabilities: 'UNVERIFIED', exclusions: 'UNVERIFIED', runtime: 'UNVERIFIED', reviewRequired: true
 });
 
-export function reconcileRegistry(approvedRegistry: Readonly<Record<string, Specialist>>, inventory: SpecialistInventoryResult): RegistryReconciliation {
+export function reconcileRegistry(approvedRegistry: Readonly<Record<string, ApprovedRegistrySpecialist>>, inventory: SpecialistInventoryResult): RegistryReconciliation {
   const snapshot = Object.freeze(Object.fromEntries(Object.entries(approvedRegistry).map(([id, specialist]) => [id, Object.freeze({ ...specialist, runtime: specialist.runtime && Object.freeze({ ...specialist.runtime }) })])));
   if (inventory.status === 'UNAVAILABLE') return {
     freshness: 'UNVERIFIED',
@@ -66,7 +74,7 @@ export function reconcileRegistry(approvedRegistry: Readonly<Record<string, Spec
   return { freshness: 'VERIFIED', outcomes, approvedRegistryChanged: false, approvedRegistrySnapshot: snapshot };
 }
 
-export async function reconcileSpecialistInventory(provider: SpecialistInventoryProvider, approvedRegistry: Readonly<Record<string, Specialist>>): Promise<RegistryReconciliation> {
+export async function reconcileSpecialistInventory(provider: SpecialistInventoryProvider, approvedRegistry: Readonly<Record<string, ApprovedRegistrySpecialist>>): Promise<RegistryReconciliation> {
   try { return reconcileRegistry(approvedRegistry, await provider.discover()); }
   catch (error) { return reconcileRegistry(approvedRegistry, { status: 'UNAVAILABLE', source: 'provider', observedAt: new Date().toISOString(), reason: error instanceof Error ? error.message : 'INVENTORY_PROVIDER_FAILED' }); }
 }
