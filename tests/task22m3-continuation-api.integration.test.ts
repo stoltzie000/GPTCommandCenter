@@ -1,0 +1,46 @@
+// @ts-nocheck
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { PgStore } from '../src/pg-store.js';
+import { persistResolvedRouting } from '../src/routing.js';
+
+const url=process.env.PG_TEST_URL; const id=()=>randomUUID();
+const tokenHeaders={'authorization':'Bearer test-only-token','content-type':'application/json'};
+const start=port=>{const child=spawn(process.execPath,['dist/src/server.js'],{env:{...process.env,APP_MODE:'deployed',AUTH_MODE:'token',DATABASE_URL:url,PGPASSWORD:process.env.PGPASSWORD,ORCHESTRATOR_API_TOKEN:'test-only-token',AUTH_PRINCIPALS:JSON.stringify({'test-only-token':{id:'operator',roles:[],scopes:[]}}),PORT:String(port)},stdio:['ignore','pipe','pipe']});return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('SERVER_START_TIMEOUT')),5000);child.stdout.on('data',chunk=>{if(String(chunk).includes('server_started')){clearTimeout(timer);resolve(child);}});child.on('error',reject);});};
+const stop=child=>new Promise(resolve=>{child.once('exit',resolve);child.kill('SIGTERM');});
+const request=(port,path,body)=>fetch(`http://127.0.0.1:${port}${path}`,body?{method:'POST',headers:tokenHeaders,body:JSON.stringify(body)}:{headers:{authorization:'Bearer test-only-token'}});
+const unrouted=async(store,objective='clarification command')=>store.createWorkflow({requestId:id(),workflowType:'non_code',logicalSpecialistId:null,runtimeId:undefined,validationRequired:false,effectiveClassification:'PUBLIC',objective,context:{},requiresImplementation:false},'22m3','create');
+const ambiguous=async(store,workflow)=>persistResolvedRouting(store,workflow.id,{routingConfidence:'AMBIGUOUS',selectedSpecialistId:null,routingReason:'two possible owners',candidates:[{specialistId:'architecture-security-advisor',rank:1,matchReason:'architecture',evidence:{specialistId:'architecture-security-advisor',registryVersion:'1',ownershipMatches:['architecture'],capabilityMatches:[],workflowRelationship:'none',exclusionResult:'eligible',specificity:2,runtimeStatus:'ACTIVE',matchReason:'architecture'}},{specialistId:'repository-engineering-advisor',rank:2,matchReason:'repository',evidence:{specialistId:'repository-engineering-advisor',registryVersion:'1',ownershipMatches:['repository'],capabilityMatches:[],workflowRelationship:'none',exclusionResult:'eligible',specificity:2,runtimeStatus:'ACTIVE',matchReason:'repository'}}],requiresClarification:true,clarificationQuestion:'Which specialist owns this?'});
+
+test('22M3-01/02/03 clarification command routes server-side and preserves history',{skip:!url},async()=>{
+  const store=new PgStore(url);const workflow=await unrouted(store);const routed=await ambiguous(store,workflow);await store.pool.end();const port=18130;const child=await start(port);
+  try{
+    const forged=await request(port,`/v1/workflows/${workflow.id}/clarification-response`,{clarificationId:routed.clarification.id,response:'security architecture',routing:{selectedSpecialistId:'forged-specialist',routingConfidence:'CLEAR',routingReason:'forged'},candidates:[{specialistId:'forged-specialist',rank:1,matchReason:'forged'}]});
+    assert.equal(forged.status,200);const body=await forged.json();assert.equal(body.status,'ROUTED');assert.equal(body.selectedSpecialistId,'architecture-security-advisor');assert.equal(body.workflow.selectedSpecialistId,'architecture-security-advisor');assert.equal(body.decision.decisionType,'POST_CLARIFICATION');
+    const history=await (await request(port,`/v1/workflows/${workflow.id}/routing-decisions`)).json();assert.deepEqual(history.map(x=>x.decisionType),['INITIAL','POST_CLARIFICATION']);assert.equal(history[0].current,false);assert.equal(history[1].current,true);
+    const before=JSON.stringify(history);const injected=await request(port,`/v1/workflows/${workflow.id}/clarification-response`,{clarificationId:routed.clarification.id,response:'again',logicalSpecialistId:'forged',runtimeId:'forged',workflowStatus:'COMPLETE'});assert.equal(injected.status,400);assert.equal(JSON.stringify(await (await request(port,`/v1/workflows/${workflow.id}/routing-decisions`)).json()),before);
+  }finally{await stop(child);}
+  const fresh=await start(18131);try{const read=await (await request(18131,`/v1/workflows/${workflow.id}`)).json();const history=await (await request(18131,`/v1/workflows/${workflow.id}/routing-decisions`)).json();assert.equal(read.selectedSpecialistId,history.find(x=>x.current).selectedSpecialistId);assert.equal(read.execution.started,false);}finally{await stop(fresh);}
+});
+
+test('22M3-04/05/06 override command validates intent and has zero invalid effects',{skip:!url},async()=>{
+  const store=new PgStore(url);const workflow=await store.createWorkflow({requestId:id(),workflowType:'non_code',logicalSpecialistId:'previous-specialist',runtimeId:'previous-runtime',validationRequired:false,effectiveClassification:'PUBLIC',objective:'override command',context:{},requiresImplementation:false},'22m3','create');const initial={id:id(),workflowId:workflow.id,selectedSpecialistId:'previous-specialist',routingConfidence:'CLEAR',routingReason:'initial',decisionType:'INITIAL',supersedesDecisionId:null,createdAt:new Date().toISOString()};await store.recordRoutingDecision(initial);await store.pool.end();const child=await start(18132);
+  try{
+    const response=await request(18132,`/v1/workflows/${workflow.id}/override`,{specialistId:'architecture-security-advisor',reason:'approved target'});assert.equal(response.status,200);const body=await response.json();assert.equal(body.status,'ROUTED');assert.equal(body.selectedSpecialistId,'architecture-security-advisor');assert.equal(body.decision.decisionType,'USER_OVERRIDE');
+    const before=JSON.stringify(await (await request(18132,`/v1/workflows/${workflow.id}/routing-decisions`)).json());
+    for(const payload of [{specialistId:'missing-specialist'},{specialistId:'architecture-security-advisor',runtimeId:'forged',workflowStatus:'COMPLETE',routingConfidence:'CLEAR',executionEvidence:{forged:true}}]){const invalid=await request(18132,`/v1/workflows/${workflow.id}/override`,payload);assert.equal(invalid.status,400);}
+    assert.equal(JSON.stringify(await (await request(18132,`/v1/workflows/${workflow.id}/routing-decisions`)).json()),before);const fresh=new PgStore(url);try{assert.equal((await fresh.getAttempts(workflow.id)).length,0);}finally{await fresh.pool.end();}
+  }finally{await stop(child);}
+});
+
+test('22M3-07 illegal clarification state is rejected without mutation',{skip:!url},async()=>{
+  const store=new PgStore(url);const workflow=await store.createWorkflow({requestId:id(),workflowType:'non_code',logicalSpecialistId:'architecture-security-advisor',runtimeId:'runtime',validationRequired:false,effectiveClassification:'PUBLIC',objective:'illegal clarification',context:{},requiresImplementation:false},'22m3','create');await store.pool.end();const child=await start(18133);
+  try{const response=await request(18133,`/v1/workflows/${workflow.id}/clarification-response`,{clarificationId:id(),response:'security'});assert.equal(response.status,400);const fresh=new PgStore(url);try{const current=await fresh.getWorkflow(workflow.id);assert.equal(current.status,'ROUTED');assert.equal((await fresh.getRoutingHistory(workflow.id)).length,0);assert.equal((await fresh.getAttempts(workflow.id)).length,0);}finally{await fresh.pool.end();}}finally{await stop(child);}
+});
+
+test('22M3-10 approval command uses the existing persisted approval operation',{skip:!url},async()=>{
+  const store=new PgStore(url);const workflow=await store.createWorkflow({requestId:id(),workflowType:'software',logicalSpecialistId:'architecture-security-advisor',runtimeId:'runtime',validationRequired:true,effectiveClassification:'PUBLIC',objective:'approval command',context:{},requiresImplementation:true},'22m3','approval');const approval=await store.createPendingApproval({workflowId:workflow.id,protectedActionId:'protected-stage',scopeFingerprint:'scope-v1',reason:'material action',categories:['EXECUTION_RISK']});await store.pool.end();const child=await start(18134);
+  try{const response=await request(18134,`/v1/workflows/${workflow.id}/approval`,{approvalId:approval.id,decision:'APPROVED',reason:'approved'});assert.equal(response.status,200);const body=await response.json();assert.equal(body.status,'APPROVED');assert.equal(body.workflow.status,'ROUTED');assert.equal(body.workflow.approvalRequired,false);const injected=await request(18134,`/v1/workflows/${workflow.id}/approval`,{approvalId:approval.id,decision:'REJECTED',workflowStatus:'COMPLETE'});assert.equal(injected.status,400);}finally{await stop(child);}
+});

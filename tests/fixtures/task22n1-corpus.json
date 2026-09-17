@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "schemaVersion": 1,
+      "id": "holdout-specific-owner",
+      "title": "Architecture request",
+      "request": "Review the system architecture",
+      "expected": {"outcome": "SPECIFIC_SPECIALIST", "specialistId": "architecture-security-advisor", "confidence": "CLEAR"},
+      "category": "HOLDOUT",
+      "tags": ["single-owner", "clear"]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "curated-no-match",
+      "title": "Unowned request",
+      "request": "Plan an unrelated activity with no approved owner",
+      "expected": {"outcome": "NO_MATCH", "confidence": "NO_MATCH"},
+      "category": "CURATED",
+      "tags": ["no-match"]
+    }
+  ]
+}

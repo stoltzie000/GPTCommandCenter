@@ -7,6 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
     "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:routing-eval": "npm run build && node dist/src/routing-evaluation-runner.js",
+    "report:routing-release": "npm run build && node dist/src/routing-release-report-runner.js",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "engines": { "node": ">=20" },

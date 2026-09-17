@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "schemaVersion": 1,
+      "id": "holdout-001",
+      "title": "Review webhook trust boundaries",
+      "request": "Evaluate the trust boundaries around our incoming webhooks and recommend a safer service design.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "single-owner", "clear"],
+      "notes": "The canonical registry assigns architecture and security review to architecture-security-advisor."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-002",
+      "title": "Assess tenant isolation",
+      "request": "Assess whether the proposed multi-tenant design keeps customer data isolated across services.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "single-owner", "clear"],
+      "notes": "This is a system architecture and security-boundary assessment."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-003",
+      "title": "Evaluate deployment isolation",
+      "request": "Review the deployment isolation plan for the worker service and identify architectural security risks.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "single-owner", "clear", "unverified-runtime"],
+      "notes": "Logical routing remains with the approved owner even when its configured runtime is unverified."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-004",
+      "title": "Review file-upload security design",
+      "request": "Analyze the architecture for safely accepting user-uploaded files, including containment and authorization boundaries.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "single-owner", "clear"],
+      "notes": "The request asks for security and architecture review, both approved capabilities."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-005",
+      "title": "Assess a migration design",
+      "request": "Assess the architectural risks of moving the billing data store and preserving least-privilege access during the migration.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "single-owner", "clear"],
+      "notes": "This combines system architecture assessment with an explicit security review concern."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-006",
+      "title": "Design service authorization",
+      "request": "Recommend an authorization architecture for service-to-service calls across the internal platform.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "single-owner", "clear"],
+      "notes": "Authorization architecture is within the approved architecture and security ownership."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-007",
+      "title": "Fix a TypeScript implementation bug",
+      "request": "Find and fix the null-handling bug in this TypeScript function and return the corrected code.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "no-match", "adversarial-similarity"],
+      "notes": "Technical language alone does not establish approved architecture or security ownership; this is an implementation task."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-008",
+      "title": "Compare cloud prices",
+      "request": "Compare the monthly cost of running this workload on three cloud providers and recommend the cheapest option.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "no-match", "adversarial-similarity"],
+      "notes": "Cloud infrastructure wording is not itself an approved architecture or security ownership signal."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-009",
+      "title": "Write a data export query",
+      "request": "Write a SQL query that exports last quarter's customer transactions grouped by region.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "no-match"],
+      "notes": "The request is database implementation work, not an architecture or security review."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-010",
+      "title": "Draft a customer announcement",
+      "request": "Draft a concise email announcing the new customer dashboard and explaining its benefits.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "no-match"],
+      "notes": "No approved registry specialist owns customer communications."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-011",
+      "title": "Build a sales forecast",
+      "request": "Use these monthly figures to forecast next quarter's sales and summarize the expected revenue.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "no-match"],
+      "notes": "The canonical registry has no approved sales or forecasting owner."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "holdout-012",
+      "title": "Prepare a hiring interview",
+      "request": "Create interview questions and a scoring rubric for hiring a customer-support manager.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "HOLDOUT",
+      "tags": ["holdout", "no-match"],
+      "notes": "No approved specialist owns recruiting or human-resources work."
+    }
+  ]
+}

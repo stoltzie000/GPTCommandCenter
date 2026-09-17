@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "schemaVersion": 1,
+      "id": "clear-architecture-review",
+      "title": "Review a system architecture",
+      "request": "Review the architecture of a service before implementation and identify design risks.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "CURATED",
+      "tags": ["single-owner", "clear"],
+      "notes": "The canonical specialist owns architecture review."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "clear-architecture-boundaries",
+      "title": "Define service boundaries",
+      "request": "Assess the proposed service boundaries and recommend an architecture that keeps responsibilities clear.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "CURATED",
+      "tags": ["single-owner", "clear"],
+      "notes": "This is an architecture-ownership request without a competing approved owner."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "clear-threat-model",
+      "title": "Threat-model a new feature",
+      "request": "Create a threat model for the new authentication feature and identify security controls that are missing.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "CURATED",
+      "tags": ["single-owner", "clear"],
+      "notes": "Security review is an approved capability of the canonical specialist."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "clear-api-security-review",
+      "title": "Review API security design",
+      "request": "Review the API authentication and authorization design for security weaknesses before it ships.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "CURATED",
+      "tags": ["single-owner", "clear"],
+      "notes": "The request is directly within the approved security-review capability."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "clear-data-flow-design",
+      "title": "Assess data flows",
+      "request": "Assess the system data flows and architecture for unsafe trust boundaries and recommend changes.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "CURATED",
+      "tags": ["single-owner", "clear", "unverified-runtime"],
+      "notes": "Logical routing ownership remains architecture and security even when the configured runtime is unverified."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "clear-architecture-risk-review",
+      "title": "Identify architecture risks",
+      "request": "Identify the highest-risk architectural decisions in this proposal and explain how to reduce them.",
+      "expected": {
+        "outcome": "SPECIFIC_SPECIALIST",
+        "specialistId": "architecture-security-advisor",
+        "confidence": "CLEAR"
+      },
+      "category": "CURATED",
+      "tags": ["single-owner", "clear"],
+      "notes": "Architecture risk assessment is covered by the approved architecture capability."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "no-match-financial-planning",
+      "title": "Plan a personal budget",
+      "request": "Create a personal monthly budget and recommend how to allocate savings across expenses.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "CURATED",
+      "tags": ["no-match", "adversarial-similarity"],
+      "notes": "The request is unrelated to the approved architecture and security ownership."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "no-match-travel-itinerary",
+      "title": "Plan a trip",
+      "request": "Plan a seven-day vacation itinerary with restaurants and sightseeing recommendations.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "CURATED",
+      "tags": ["no-match"],
+      "notes": "No approved specialist owns travel planning."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "no-match-marketing-copy",
+      "title": "Write marketing copy",
+      "request": "Write a launch announcement and social media copy for a new consumer product.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "CURATED",
+      "tags": ["no-match", "adversarial-similarity"],
+      "notes": "The wording describes a product but does not request architecture or security work."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "no-match-hr-policy",
+      "title": "Draft an HR policy",
+      "request": "Draft a workplace leave policy and employee communication for a small business.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "CURATED",
+      "tags": ["no-match"],
+      "notes": "No approved specialist owns human-resources policy drafting."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "no-match-recipe-generation",
+      "title": "Create a recipe",
+      "request": "Create a vegetarian dinner recipe using lentils, tomatoes, and spinach.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "CURATED",
+      "tags": ["no-match"],
+      "notes": "The request has no approved architecture or security owner."
+    },
+    {
+      "schemaVersion": 1,
+      "id": "no-match-language-translation",
+      "title": "Translate a document",
+      "request": "Translate this customer letter from Spanish into English while preserving its tone.",
+      "expected": {
+        "outcome": "NO_MATCH",
+        "confidence": "NO_MATCH"
+      },
+      "category": "CURATED",
+      "tags": ["no-match", "adversarial-similarity"],
+      "notes": "A customer-facing document is not evidence of architecture or security ownership."
+    }
+  ]
+}
