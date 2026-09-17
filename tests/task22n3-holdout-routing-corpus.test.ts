@@ -101,9 +101,9 @@ test('22N3-09 holdout contains adversarially similar but unowned technical reque
 
 test('22N3-10 unsupported PROBABLE and AMBIGUOUS classes are not fabricated', async () => {
   const {holdout} = await corpora();
-  const activeOwners = Object.values(registry).filter(item => item.status === 'ACTIVE');
+  const activeOwners = Object.values(registry).filter(item => item.status === 'ACTIVE' && item.routingApproved === true);
   const hasOverlap = activeOwners.some(item => item.overlapsWith.length > 0);
-  assert.equal(activeOwners.length, 1);
+  assert.equal(activeOwners.length, 23);
   assert.equal(hasOverlap, false);
   assert.equal(holdout.cases.some(item => item.expected.confidence === 'PROBABLE'), false);
   assert.equal(holdout.cases.some(item => item.expected.outcome === 'AMBIGUOUS'), false);

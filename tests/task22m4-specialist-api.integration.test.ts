@@ -11,7 +11,7 @@ const get=(port,path)=>fetch(`http://127.0.0.1:${port}${path}`,{headers:{authori
 test('22M4-01/02/03/10 specialist list/detail API is canonical, safe, and side-effect free',{skip:!url},async()=>{
   const child=await start(18140);
   try{
-    const before=await (await get(18140,'/v1/specialists')).json();assert.equal(before.length,1);assert.equal(before[0].id,'architecture-security-advisor');assert.equal(before[0].runtime.executable,false);assert.equal(before[0].manualHandoff.available,false);
+    const before=await (await get(18140,'/v1/specialists')).json();assert.equal(before.length,25);assert.equal(before[0].id,'architecture-security-advisor');assert.equal(before[0].role,'ROUTABLE_SPECIALIST');assert.equal(before[0].runtime.executable,false);assert.equal(before[0].manualHandoff.available,false);
     const serialized=JSON.stringify(before);for(const forbidden of ['authorizationDecision','context','instructionRef','outputSchema','timeoutSeconds','maxAttempts','OPENAI_API_KEY','secrets'])assert.equal(serialized.includes(forbidden),false,forbidden);
     const detail=await get(18140,'/v1/specialists/architecture-security-advisor');assert.equal(detail.status,200);const body=await detail.json();assert.deepEqual(body,before[0]);
     const unknown=await get(18140,'/v1/specialists/not-registered');assert.equal(unknown.status,404);

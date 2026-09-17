@@ -1,4 +1,4 @@
-import { Specialist, RuntimeStatus } from './domain.js';
+import { Specialist, RuntimeStatus, SpecialistRole } from './domain.js';
 
 export interface SpecialistReadModel {
   id: string;
@@ -7,6 +7,9 @@ export interface SpecialistReadModel {
   ownership: string[];
   capabilities: string[];
   exclusions: string[];
+  role: SpecialistRole;
+  canonical: boolean;
+  routingApproved: boolean;
   routingEligible: boolean;
   runtime: {
     status: RuntimeStatus;
@@ -20,6 +23,8 @@ export interface SpecialistReadModel {
 
 export function readSpecialist(specialist: Specialist): SpecialistReadModel {
   const runtimeStatus = specialist.runtime?.status ?? specialist.runtimeStatus;
+  const role = specialist.role ?? 'ROUTABLE_SPECIALIST';
+  const routingApproved = specialist.routingApproved ?? role === 'ROUTABLE_SPECIALIST';
   const manualHandoffAvailable = runtimeStatus === 'MANUAL_ONLY' && typeof specialist.chatgptUrl === 'string' && specialist.chatgptUrl.length > 0;
   return {
     id: specialist.specialistId,
@@ -28,7 +33,10 @@ export function readSpecialist(specialist: Specialist): SpecialistReadModel {
     ownership: [...specialist.primaryOwnership],
     capabilities: [...specialist.capabilities],
     exclusions: [...specialist.exclusions],
-    routingEligible: specialist.status === 'ACTIVE' && specialist.primaryOwnership.length > 0,
+    role,
+    canonical: specialist.canonical === true,
+    routingApproved,
+    routingEligible: specialist.status === 'ACTIVE' && routingApproved && role !== 'ORCHESTRATOR' && role !== 'UNKNOWN_PENDING_REVIEW' && specialist.primaryOwnership.length > 0,
     runtime: {
       status: runtimeStatus,
       executable: specialist.status === 'ACTIVE' && runtimeStatus === 'ACTIVE' && specialist.runtime?.status === 'ACTIVE'

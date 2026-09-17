@@ -8,6 +8,8 @@ export type RegistryFreshness = 'VERIFIED'|'UNVERIFIED';
 export const RUNTIME_STATUSES = ['ACTIVE','MANUAL_ONLY','UNVERIFIED','DISABLED'] as const;
 export type SpecialistStatus = 'ACTIVE'|'INACTIVE'|'DEPRECATED';
 export const SPECIALIST_STATUSES = ['ACTIVE','INACTIVE','DEPRECATED'] as const;
+export const SPECIALIST_ROLES = ['ORCHESTRATOR','ROUTABLE_SPECIALIST','BUILDER_OR_WORKFLOW_UTILITY','UNKNOWN_PENDING_REVIEW'] as const;
+export type SpecialistRole = typeof SPECIALIST_ROLES[number];
 export type ResultKind = 'success'|'retryable_failure'|'terminal_failure';
 export interface Runtime { status: RuntimeStatus; type: 'openai_agent'; runtimeId: string; version: string; instructionRef: string; outputSchema: string; timeoutSeconds: number; maxAttempts: number; }
 export const ROUTING_CONFIDENCES = ['CLEAR','PROBABLE','AMBIGUOUS','NO_MATCH'] as const;
@@ -30,7 +32,7 @@ export const MATERIAL_APPROVAL_CATEGORIES = ['SCOPE','AUTHORITY','COST','EXTERNA
 export type MaterialApprovalCategory = typeof MATERIAL_APPROVAL_CATEGORIES[number];
 export type NoMatchFallbackStep = 'NO_MATCH'|'FOCUSED_CLARIFICATION'|'APPROVED_GENERAL_FALLBACK'|'EXPLICIT_NO_OWNER_RESULT';
 export const NO_MATCH_FALLBACK_ORDER: readonly NoMatchFallbackStep[] = ['NO_MATCH','FOCUSED_CLARIFICATION','APPROVED_GENERAL_FALLBACK','EXPLICIT_NO_OWNER_RESULT'];
-export interface Specialist { id: string; specialistId: string; displayName: string; description:string; primaryOwnership:string[]; capabilities:string[]; exclusions:string[]; overlapsWith:string[]; upstreamSpecialists:string[]; downstreamSpecialists:string[]; status:SpecialistStatus; runtimeStatus:RuntimeStatus; runtimeId:string|null; registryVersion:string; lastReviewedAt:string; chatgptUrl?: string; runtime?: Runtime; canValidateCodex: boolean; inventoryIdentity?: string; }
+export interface Specialist { id: string; specialistId: string; displayName: string; description:string; primaryOwnership:string[]; capabilities:string[]; exclusions:string[]; overlapsWith:string[]; upstreamSpecialists:string[]; downstreamSpecialists:string[]; status:SpecialistStatus; runtimeStatus:RuntimeStatus; runtimeId:string|null; registryVersion:string; lastReviewedAt:string; chatgptUrl?: string; runtime?: Runtime; canValidateCodex: boolean; inventoryIdentity?: string; role?: SpecialistRole; canonical?: boolean; routingApproved?: boolean; }
 export interface SoftwareOutput { objective:string; requirements:string[]; constraints:string[]; affected_components:string[]; security_requirements:string[]; test_requirements:string[]; acceptance_criteria:string[]; validation_required:boolean; validation_reason:string; }
 export interface CodexPrompt { task_summary:string; implementation_instructions:string; scope_constraints:string[]; tests_required:string[]; acceptance_criteria:string[]; expected_result_report:string[]; }
 export interface ValidationOutput { verdict:'PASS'|'PASS_WITH_CHANGES'|'FAIL'; blocking_findings:string[]; non_blocking_findings:string[]; remediation_requirements:string[]; }
