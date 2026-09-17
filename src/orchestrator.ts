@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {CodexPrompt,SoftwareOutput,validCodexPrompt,validSoftwareOutput,validValidation,Workflow} from './domain.js';
-import {resolveSpecialist} from './registry.js';
+import {resolveRoutableSpecialist} from './registry.js';
 import {ClarificationStore,OverrideStore,PersistenceStore,RoutingHistoryStore,RoutingResolutionStore,hash} from './store.js';
 import {CodexExecutor,PromptBuilderExecutor,SpecialistExecutor,ValidationExecutor} from './executors.js';
 import {assertAuthorizedCreation,assertExecutionContext,contextFromWorkflow,CreationContext,ExecutionContext,resolveRepository} from './trust.js';
@@ -14,6 +14,7 @@ export class Orchestrator {
 
   if(!b||typeof b.request_id!=='string'||!b.request_id||typeof b.objective!=='string'||!b.objective.trim()||!['software','non_code'].includes(b.workflow_type))throw new Error('INVALID_REQUEST');
   if(b.requested_specialist!==undefined&&(typeof b.requested_specialist!=='string'||!b.requested_specialist.trim()))throw new Error('INVALID_REQUEST');
+  if(b.requested_specialist!==undefined&&!resolveRoutableSpecialist(b.requested_specialist.trim()))throw new Error('INVALID_REQUESTED_SPECIALIST');
 
   const workflow=await this.store.createWorkflow({
     requestId:b.request_id,
@@ -42,6 +43,7 @@ export class Orchestrator {
 
   const selected=await interpretAndSelect(this.interpreter,{request:routingRequest});
   const allowed=context.resolvedRepository?.allowedSpecialists;
+  if(allowed?.some(id=>!resolveRoutableSpecialist(id)))throw new Error('INVALID_SPECIALIST_POLICY');
   const candidates=allowed
     ? selected.candidates.filter(candidate=>allowed.includes(candidate.specialistId))
     : selected.candidates;
@@ -65,6 +67,7 @@ export class Orchestrator {
   const hint=typeof requestedSpecialist==='string'&&requestedSpecialist.trim()?`\nUser requested specialist focus: ${requestedSpecialist.trim()}`:'';
   const interpreted=await interpretAndSelect(this.interpreter,{request:`${workflow.objective}\nClarification response: ${response.trim()}${hint}`,workflowContext:{currentSpecialistId:workflow.logicalSpecialistId??undefined,routeType:'POST_CLARIFICATION'},repositoryContext:repositoryId?{repositoryId}:undefined});
   const allowed=raw?.resolvedRepository?.allowedSpecialists as readonly string[]|undefined;
+  if(allowed?.some(id=>!resolveRoutableSpecialist(id)))throw new Error('INVALID_SPECIALIST_POLICY');
   const candidates=allowed?interpreted.candidates.filter(candidate=>allowed.includes(candidate.specialistId)):interpreted.candidates;
   const resolution=resolveRouting(candidates);
   if(resolution.routingConfidence==='AMBIGUOUS'||!resolution.selectedSpecialistId)throw new Error('ROUTING_UNRESOLVED');
@@ -75,8 +78,8 @@ export class Orchestrator {
  }
  async applyUserOverride(workflowId:string,targetSpecialistId:string,reason:string,principal:ExecutionContext['principal'],expectedDecisionId?:string){
   if(!targetSpecialistId.trim())throw new Error('INVALID_OVERRIDE_TARGET');
-  const target=resolveSpecialist(targetSpecialistId.trim());
-  if(!target||target.status!=='ACTIVE')throw new Error('INVALID_OVERRIDE_TARGET');
+  const target=resolveRoutableSpecialist(targetSpecialistId.trim());
+  if(!target)throw new Error('INVALID_OVERRIDE_TARGET');
   const overrideStore=this.store as PersistenceStore&OverrideStore;
   if(!overrideStore.applyUserOverride)throw new Error('OVERRIDE_PERSISTENCE_UNAVAILABLE');
   const workflow=await this.store.getWorkflow(workflowId);
@@ -89,7 +92,7 @@ export class Orchestrator {
   return overrideStore.applyUserOverride(workflowId,target.specialistId,reason,principal.id,expectedDecisionId);
  }
  async run(id:string,context:ExecutionContext,owner='worker'){assertExecutionContext(context);if(context.workflowId!==id||context.operation!=='run')throw new Error('AUTHORIZATION_FAILED');const w=await this.store.getWorkflow(id);if(!w)throw new Error('WORKFLOW_NOT_FOUND');if(!w.logicalSpecialistId)throw new Error('ROUTING_REQUIRED');if(context.specialistId!==w.logicalSpecialistId)throw new Error('AUTHORIZATION_FAILED');if(w.status==='AWAITING_CLARIFICATION')throw new Error('CLARIFICATION_REQUIRED');if(w.status==='AWAITING_APPROVAL')throw new Error('APPROVAL_REQUIRED');const f=()=>this.advance(w,owner,context.principal);return this.store.exclusive?this.store.exclusive(id,f):f();}
- private async advance(w:Workflow,owner:string,principal:ExecutionContext['principal']){if(!w.logicalSpecialistId)throw new Error('ROUTING_REQUIRED');const s=resolveSpecialist(w.logicalSpecialistId)!;
+ private async advance(w:Workflow,owner:string,principal:ExecutionContext['principal']){if(!w.logicalSpecialistId)throw new Error('ROUTING_REQUIRED');const s=resolveRoutableSpecialist(w.logicalSpecialistId);if(!s)throw new Error('INVALID_ROUTING_TARGET');
   const predefined=softwareDeliveryDefinitionFor(w);
   const assertActivation=async(target:Parameters<typeof assertSoftwareDeliveryActivation>[1])=>{if(predefined)assertSoftwareDeliveryActivation(w,target,await this.store.getStages(w.id),await this.store.getAttempts(w.id),await this.store.getArtifacts(w.id));};
   if(w.status==='ROUTED'){await assertActivation('SPECIALIST_ANALYSIS');const cxt=contextFromWorkflow(w,'run','specialist',principal,this.registry);if(!s.runtime||s.runtime.status!=='ACTIVE'){await this.store.transitionWorkflow(w,'MANUAL_HANDOFF_REQUIRED','system','disposition',{reason:'runtime_not_executable'});return w;}const c=await this.store.claimStage(w.id,`specialist:${s.specialistId}`,'specialist',s.runtime.runtimeId,owner);if(c.existing)return w;const r=await this.specialist.execute({trustedContext:cxt,workflowId:w.id,stageId:c.stage.id,runtimeId:s.runtime.runtimeId,runtimeVersion:s.runtime.version,objective:w.objective,context:w.context,expectedOutputSchema:s.runtime.outputSchema});if(r.kind!=='success'){await this.store.failStage(w.id,c.attempt.id,r.kind==='retryable_failure'?'STATUS_UNKNOWN':'FAILED',{errorCode:r.errorCode},owner);if(r.kind==='retryable_failure')await this.store.transitionWorkflow(w,'MANUAL_HANDOFF_REQUIRED','orchestrator','ambiguous-execution');else await this.fail(w,r.errorCode??'SPECIALIST_EXECUTION_FAILED');return w;}await this.store.recordInitiation(w.id,c.attempt.id,{provider:'openai',externalExecutionId:r.externalExecutionId},owner);await this.store.transitionWorkflow(w,'SPECIALIST_RUNNING','orchestrator','specialist',undefined,c.stage.id);if(!validSoftwareOutput(r.output)){await this.fail(w,'SPECIALIST_OUTPUT_INVALID');return w;}const a=await this.store.addArtifact(w.id,'specialist_output',r.output);await this.store.completeStage(w.id,c.attempt.id,r.externalExecutionId,a.id,{terminal:'provider_success'},owner);w.validationRequired=w.workflowType==='software'&&(r.output as SoftwareOutput).validation_required;await this.store.transitionWorkflow(w,'SPECIALIST_COMPLETE','executor',s.runtime.runtimeId,{artifactId:a.id},c.stage.id);if(w.workflowType==='non_code'){await this.store.transitionWorkflow(w,'COMPLETE','orchestrator','state-machine');return w;}}

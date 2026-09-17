@@ -92,7 +92,7 @@ test('Task 22K requested specialist is not trusted authority',async()=>{
 test('Task 22K creation filters routing candidates through repository specialist policy',async()=>{
   const store=new MemoryStore();
   const app=orchestrator(store);
-  const c=context(['some-other-specialist']);
+  const c=context(['python-oracle']);
 
   const workflow=await app.create({
     context:{...c,requestId:'task22k-policy-filter'},

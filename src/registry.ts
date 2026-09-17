@@ -41,7 +41,26 @@ export const registry: Record<string, Specialist> = {
   'policy-document-reviewer': entry('policy-document-reviewer', 'Policy Document Reviewer', 'Auto-insurance policy document review specialist.', 'ROUTABLE_SPECIALIST', ['auto-insurance policy review'], ['policy document review']),
   'equipment-repair-assistant': entry('equipment-repair-assistant', 'Equipment & Repair Assistant', 'Equipment and appliance repair specialist.', 'ROUTABLE_SPECIALIST', ['equipment and appliance repair'], ['equipment repair'])
 };
-export function resolveSpecialist(id:string) { return registry[id]; }
+export function resolveSpecialist(id:string) {
+  if (typeof id !== 'string' || !id.trim()) return undefined;
+  const specialist = registry[id];
+  return specialist?.id === id ? specialist : undefined;
+}
+
+export function isCanonicalRoutableSpecialist(specialist: Specialist | undefined): specialist is Specialist {
+  return specialist !== undefined
+    && specialist.id === specialist.specialistId
+    && specialist.canonical === true
+    && specialist.status === 'ACTIVE'
+    && specialist.routingApproved !== false
+    && specialist.role !== 'ORCHESTRATOR'
+    && specialist.role !== 'UNKNOWN_PENDING_REVIEW';
+}
+
+export function resolveRoutableSpecialist(id: string) {
+  const specialist = resolveSpecialist(id);
+  return isCanonicalRoutableSpecialist(specialist) ? specialist : undefined;
+}
 
 const textArrayFields = ['primaryOwnership','capabilities','exclusions'] as const;
 const isText = (value:unknown): value is string => typeof value === 'string' && value.trim().length > 0;

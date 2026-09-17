@@ -1,5 +1,5 @@
 import { CandidateEvidence, RoutingConfidence, RoutingResolution, SelectedCandidate, Specialist, TaskInterpretation } from './domain.js';
-import { registry as canonicalRegistry } from './registry.js';
+import { isCanonicalRoutableSpecialist, registry as canonicalRegistry, resolveRoutableSpecialist } from './registry.js';
 import { RoutingHistoryStore, RoutingResolutionStore } from './store.js';
 import { randomUUID } from 'node:crypto';
 
@@ -28,4 +28,25 @@ function policyReason(confidence:RoutingConfidence,candidates:SelectedCandidate[
 export function resolveRouting(candidates:SelectedCandidate[]):RoutingResolution {if(!Array.isArray(candidates))throw new Error('INVALID_CANDIDATES');if(!candidates.length)return {routingConfidence:'NO_MATCH',selectedSpecialistId:null,routingReason:policyReason('NO_MATCH',[]),candidates:[],requiresClarification:false};const [top,second]=candidates;const topOwnership=top.evidence.ownershipMatches.length;const secondOwnership=second?.evidence.ownershipMatches.length??0;const gap=top.evidence.specificity-(second?.evidence.specificity??0);let routingConfidence:RoutingConfidence;if(!second)routingConfidence=topOwnership?'CLEAR':'PROBABLE';else if(topOwnership>0&&secondOwnership===0)routingConfidence='CLEAR';else if(topOwnership===secondOwnership&&gap===0)routingConfidence='AMBIGUOUS';else if(gap>=2||topOwnership>secondOwnership)routingConfidence='PROBABLE';else routingConfidence='AMBIGUOUS';const ambiguous=routingConfidence==='AMBIGUOUS';return {routingConfidence,selectedSpecialistId:ambiguous?null:top.specialistId,routingReason:policyReason(routingConfidence,candidates),candidates,requiresClarification:ambiguous,clarificationQuestion:ambiguous?`Should this task focus on ${top.specialistId} or ${second.specialistId}?`:undefined};}
 
 export function routingDecision(workflowId:string,resolution:RoutingResolution,decisionType:'INITIAL'|'POST_CLARIFICATION'|'DOWNSTREAM_ROUTE'|'FALLBACK'='INITIAL',supersedesDecisionId:string|null=null){return {id:randomUUID(),workflowId,selectedSpecialistId:resolution.selectedSpecialistId,routingConfidence:resolution.routingConfidence,routingReason:resolution.routingReason,decisionType,supersedesDecisionId,createdAt:new Date().toISOString()};}
-export async function persistResolvedRouting(store:RoutingHistoryStore&Partial<RoutingResolutionStore>,workflowId:string,resolution:RoutingResolution,decisionType:'INITIAL'|'POST_CLARIFICATION'|'DOWNSTREAM_ROUTE'|'FALLBACK'='INITIAL',supersedesDecisionId:string|null=null):Promise<any>{const decision=routingDecision(workflowId,resolution,decisionType,supersedesDecisionId);const candidates=resolution.candidates.map(x=>({id:randomUUID(),routingDecisionId:decision.id,specialistId:x.specialistId,rank:x.rank,matchReason:x.matchReason}));if(store.persistRoutingResolution)return store.persistRoutingResolution(decision,candidates,resolution.clarificationQuestion);if(resolution.routingConfidence==='AMBIGUOUS')throw new Error('ROUTING_RESOLUTION_PERSISTENCE_UNAVAILABLE');return {...await store.recordRoutingDecisionWithCandidates(decision,candidates),workflow:undefined};}
+export function validateCanonicalRoutingResolution(resolution: RoutingResolution): void {
+  if (!resolution || !Array.isArray(resolution.candidates)) throw new Error('INVALID_ROUTING_RESOLUTION');
+  const ids = new Set<string>();
+  for (const candidate of resolution.candidates) {
+    const specialist = resolveRoutableSpecialist(candidate.specialistId);
+    if (!specialist || !isCanonicalRoutableSpecialist(specialist)) throw new Error('INVALID_ROUTING_TARGET');
+    if (candidate.evidence.specialistId !== candidate.specialistId || candidate.evidence.registryVersion !== specialist.registryVersion) {
+      throw new Error('STALE_ROUTING_TARGET');
+    }
+    if (ids.has(candidate.specialistId)) throw new Error('DUPLICATE_ROUTING_TARGET');
+    ids.add(candidate.specialistId);
+  }
+  if (resolution.selectedSpecialistId !== null) {
+    const specialist = resolveRoutableSpecialist(resolution.selectedSpecialistId);
+    if (!specialist || !ids.has(resolution.selectedSpecialistId)) throw new Error('INVALID_ROUTING_TARGET');
+  }
+  if ((resolution.routingConfidence === 'AMBIGUOUS' || resolution.routingConfidence === 'NO_MATCH') && resolution.selectedSpecialistId !== null) {
+    throw new Error('INVALID_ROUTING_SELECTION');
+  }
+}
+
+export async function persistResolvedRouting(store:RoutingHistoryStore&Partial<RoutingResolutionStore>,workflowId:string,resolution:RoutingResolution,decisionType:'INITIAL'|'POST_CLARIFICATION'|'DOWNSTREAM_ROUTE'|'FALLBACK'='INITIAL',supersedesDecisionId:string|null=null):Promise<any>{validateCanonicalRoutingResolution(resolution);const decision=routingDecision(workflowId,resolution,decisionType,supersedesDecisionId);const candidates=resolution.candidates.map(x=>({id:randomUUID(),routingDecisionId:decision.id,specialistId:x.specialistId,rank:x.rank,matchReason:x.matchReason}));if(store.persistRoutingResolution)return store.persistRoutingResolution(decision,candidates,resolution.clarificationQuestion);if(resolution.routingConfidence==='AMBIGUOUS')throw new Error('ROUTING_RESOLUTION_PERSISTENCE_UNAVAILABLE');return {...await store.recordRoutingDecisionWithCandidates(decision,candidates),workflow:undefined};}

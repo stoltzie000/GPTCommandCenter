@@ -63,9 +63,9 @@ test('Task 22K memory store preserves ambiguous workflow without specialist auth
   const first=candidate();
   const second={
     ...candidate(),
-    specialistId:'competing-specialist',
+    specialistId:'policy-document-reviewer',
     rank:2,
-    evidence:{...candidate().evidence,specialistId:'competing-specialist'}
+    evidence:{...candidate().evidence,specialistId:'policy-document-reviewer'}
   };
 
   const resolution:RoutingResolution={
