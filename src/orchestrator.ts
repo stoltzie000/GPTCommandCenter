@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import {CodexPrompt,SoftwareOutput,validCodexPrompt,validSoftwareOutput,validValidation,Workflow} from './domain.js';
 import {resolveRoutableSpecialist} from './registry.js';
-import {ClarificationStore,OverrideStore,PersistenceStore,RoutingHistoryStore,RoutingResolutionStore,SpecialistCatalogStore,hash} from './store.js';
+import {ClarificationStore,OrchestrationPlanStore,OverrideStore,PersistenceStore,RoutingHistoryStore,RoutingResolutionStore,SpecialistCatalogStore,hash} from './store.js';
 import {CodexExecutor,PromptBuilderExecutor,SpecialistExecutor,ValidationExecutor} from './executors.js';
-import {assertAuthorizedCreation,assertExecutionContext,assertWorkflowPrincipal,contextFromWorkflow,CreationContext,ExecutionContext,resolveRepository} from './trust.js';
+import {assertAuthorizedCreation,assertExecutionContext,assertWorkflowPrincipal,contextFromWorkflow,CreationContext,ExecutionContext,freezeContext,resolveRepository} from './trust.js';
 import {DeterministicRequestInterpreter,InterpretationProvider,interpretAndSelect,persistResolvedRouting,resolveRouting,routingDecision} from './routing.js';
 import {assertSoftwareDeliveryActivation,codexToValidationHandoff,promptToCodexHandoff,softwareDeliveryDefinitionFor,specialistToPromptHandoff} from './predefined-workflow.js';
 import {assessSpecialistCoverage,buildDynamicSpecialist,mergeSpecialistCatalog} from './specialist-catalog.js';
+import {buildOrchestrationPlan} from './orchestration-plan.js';
 export class Orchestrator {
  constructor(public store:PersistenceStore,public specialist:SpecialistExecutor,public prompt:PromptBuilderExecutor,public codex:CodexExecutor,public validation:ValidationExecutor,private registry?:Record<string,any>,private interpreter:InterpretationProvider=new DeterministicRequestInterpreter()){ }
  private async specialistCatalog(){const source=this.store as PersistenceStore&Partial<SpecialistCatalogStore>;return source.getEffectiveSpecialists?source.getEffectiveSpecialists():mergeSpecialistCatalog();}
@@ -62,10 +63,20 @@ export class Orchestrator {
     catalog=await this.specialistCatalog();
     selected=await interpretAndSelect(this.interpreter,{request:routingRequest},catalog);
     resolution=resolveRouting(allowed?selected.candidates.filter(candidate=>allowed.includes(candidate.specialistId)):selected.candidates);
+  } else if(coverage.kind==='ORCHESTRATE') {
+    const selectedSpecialistId=coverage.specialistIds[0]??resolution.selectedSpecialistId;
+    if(!selectedSpecialistId)throw new Error('ORCHESTRATION_PLAN_TARGET_REQUIRED');
+    resolution={...resolution,routingConfidence:'PROBABLE',selectedSpecialistId,routingReason:'Existing specialists collectively cover the task; a durable orchestration plan will execute them in order.',requiresClarification:false,clarificationQuestion:undefined,candidates:selected.candidates};
   } else if(coverage.kind==='CLARIFY'&&resolution.routingConfidence==='NO_MATCH') {
     resolution={...resolution,routingConfidence:'AMBIGUOUS',requiresClarification:true,clarificationQuestion:coverage.reason,candidates:selected.candidates};
   }
   const persisted=await persistResolvedRouting(routingStore,workflow.id,resolution,'INITIAL',null,catalog);
+  if(coverage.kind==='ORCHESTRATE'){
+    const planStore=this.store as PersistenceStore&OrchestrationPlanStore;
+    if(!planStore.createOrchestrationPlan)throw new Error('ORCHESTRATION_PLAN_PERSISTENCE_UNAVAILABLE');
+    const built=buildOrchestrationPlan(workflow.id,selected.candidates,catalog);
+    await planStore.createOrchestrationPlan(built.plan,built.stages);
+  }
 
   return persisted.workflow??workflow;
  }
@@ -110,8 +121,52 @@ export class Orchestrator {
   authorize({caller:principal.id,operation:'run',specialistId:target.specialistId,repositoryId,executionType:'specialist',dataClassification:workflow.effectiveClassification??raw?.effectiveClassification??'PUBLIC',principalMaxClassification:principal.maxClassification,repository:repo});
   return overrideStore.applyUserOverride(workflowId,target.specialistId,reason,principal.id,expectedDecisionId);
  }
- async run(id:string,context:ExecutionContext,owner='worker'){assertExecutionContext(context);if(context.workflowId!==id||context.operation!=='run')throw new Error('AUTHORIZATION_FAILED');const w=await this.store.getWorkflow(id);if(!w)throw new Error('WORKFLOW_NOT_FOUND');if(!w.logicalSpecialistId)throw new Error('ROUTING_REQUIRED');if(context.specialistId!==w.logicalSpecialistId)throw new Error('AUTHORIZATION_FAILED');if(w.status==='AWAITING_CLARIFICATION')throw new Error('CLARIFICATION_REQUIRED');if(w.status==='AWAITING_APPROVAL')throw new Error('APPROVAL_REQUIRED');const f=()=>this.advance(w,owner,context.principal);return this.store.exclusive?this.store.exclusive(id,f):f();}
+ async run(id:string,context:ExecutionContext,owner='worker'){assertExecutionContext(context);if(context.workflowId!==id||context.operation!=='run')throw new Error('AUTHORIZATION_FAILED');const w=await this.store.getWorkflow(id);if(!w)throw new Error('WORKFLOW_NOT_FOUND');if(!w.logicalSpecialistId)throw new Error('ROUTING_REQUIRED');if(context.specialistId!==w.logicalSpecialistId)throw new Error('AUTHORIZATION_FAILED');if(w.status==='AWAITING_CLARIFICATION')throw new Error('CLARIFICATION_REQUIRED');if(w.status==='AWAITING_APPROVAL')throw new Error('APPROVAL_REQUIRED');const f=async()=>{const planStore=this.store as PersistenceStore&Partial<OrchestrationPlanStore>;const plan=await planStore.getOrchestrationPlan?.(id);if(plan&&plan.status!=='COMPLETE')return this.runOrchestrationPlan(w,plan,owner,context.principal);return this.advance(w,owner,context.principal);};return this.store.exclusive?this.store.exclusive(id,f):f();}
  async recover(id:string,principal:ExecutionContext['principal'],reason='stale execution requires manual handoff'){if(!reason.trim()||reason.length>1000)throw new Error('INVALID_RECOVERY_REASON');const w=await this.store.getWorkflow(id);if(!w)throw new Error('WORKFLOW_NOT_FOUND');assertWorkflowPrincipal(w,principal);const recoverable=['ROUTED','SPECIALIST_RUNNING','CODEX_PROMPT_READY','CODEX_RUNNING','CODEX_COMPLETE','VALIDATION_RUNNING'];if(!recoverable.includes(w.status))throw new Error('RECOVERY_STATE_UNSAFE');const executionType=['ROUTED','SPECIALIST_RUNNING'].includes(w.status)?'specialist':['CODEX_PROMPT_READY','CODEX_RUNNING'].includes(w.status)?'codex':'validation';contextFromWorkflow(w,'run',executionType,principal,this.registry);const attempts=await this.store.getAttempts(id);if(!attempts.some(attempt=>['CLAIMED','STARTING','RUNNING','STATUS_UNKNOWN'].includes(attempt.state)))throw new Error('RECOVERY_ATTEMPT_NOT_ACTIVE');const f=async()=>this.store.transitionWorkflow(w,'MANUAL_HANDOFF_REQUIRED','operator',principal.id,{reason:reason.trim(),recovery:true});return this.store.exclusive?this.store.exclusive(id,f):f();}
+ private async runOrchestrationPlan(w:Workflow,plan:any,owner:string,principal:ExecutionContext['principal']){
+  const planStore=this.store as PersistenceStore&OrchestrationPlanStore;
+  const stages=await planStore.getOrchestrationPlanStages(plan.id);
+  if(!stages.length)throw new Error('ORCHESTRATION_PLAN_EMPTY');
+  if(plan.status==='PLANNED')await planStore.updateOrchestrationPlan(plan.id,'RUNNING');
+  const catalog=await this.specialistCatalog();
+  for(const stage of stages.sort((a,b)=>a.order-b.order)){
+    if(stage.status==='COMPLETE')continue;
+    const dependencies=stages.filter(candidate=>stage.dependencies.includes(candidate.id));
+    if(dependencies.some(dependency=>dependency.status!=='COMPLETE')){
+      if(dependencies.some(dependency=>['FAILED','MANUAL_HANDOFF_REQUIRED'].includes(dependency.status)))await planStore.updateOrchestrationPlan(plan.id,'FAILED');
+      return w;
+    }
+    const specialist=resolveRoutableSpecialist(stage.specialistId,catalog);
+    if(!specialist)throw new Error('INVALID_ORCHESTRATION_SPECIALIST');
+    const base=contextFromWorkflow(w,'run','specialist',principal,this.registry);
+    const stageContext=freezeContext({principal,operation:'run',requestId:w.requestId,workflowId:w.id,specialistId:specialist.specialistId,executionType:'specialist',effectiveClassification:base.effectiveClassification},base.resolvedRepository);
+    if(!specialist.runtime||specialist.runtime.status!=='ACTIVE'){
+      await planStore.updateOrchestrationPlanStage(plan.id,stage.id,'MANUAL_HANDOFF_REQUIRED');
+      await planStore.updateOrchestrationPlan(plan.id,'MANUAL_HANDOFF_REQUIRED');
+      if(!['SPECIALIST_RUNNING','MANUAL_HANDOFF_REQUIRED'].includes(w.status))await this.store.transitionWorkflow(w,'MANUAL_HANDOFF_REQUIRED','system','orchestration',{planId:plan.id,planStageId:stage.id,reason:'runtime_not_executable'});
+      else if(w.status==='SPECIALIST_RUNNING')await this.store.transitionWorkflow(w,'MANUAL_HANDOFF_REQUIRED','system','orchestration',{planId:plan.id,planStageId:stage.id,reason:'runtime_not_executable'});
+      return w;
+    }
+    const predecessorArtifacts=(await this.store.getArtifacts(w.id)).filter(artifact=>artifact.planId===plan.id&&stage.dependencies.includes(artifact.planStageId??''));
+    const context={workflowObjective:w.objective,stagePurpose:stage.purpose,predecessorArtifacts:predecessorArtifacts.map(artifact=>({artifactId:artifact.id,type:artifact.artifactType,content:artifact.contentJson}))};
+    const claim=await this.store.claimStage(w.id,`orchestration:${plan.id}:${stage.id}`,'specialist',specialist.runtime.runtimeId,owner);
+    if(claim.existing){if(claim.stage.status==='COMPLETE')await planStore.updateOrchestrationPlanStage(plan.id,stage.id,'COMPLETE',claim.stage.outputArtifactId);return w;}
+    await planStore.updateOrchestrationPlanStage(plan.id,stage.id,'RUNNING');
+    const result=await this.specialist.execute({trustedContext:stageContext,workflowId:w.id,stageId:claim.stage.id,runtimeId:specialist.runtime.runtimeId,runtimeVersion:specialist.runtime.version,objective:w.objective,context,expectedOutputSchema:specialist.runtime.outputSchema});
+    if(result.kind!=='success'||result.output===undefined){await this.store.failStage(w.id,claim.attempt.id,'FAILED',{errorCode:result.errorCode??'SPECIALIST_EXECUTION_FAILED'},owner);await planStore.updateOrchestrationPlanStage(plan.id,stage.id,'FAILED');await planStore.updateOrchestrationPlan(plan.id,'FAILED');await this.fail(w,result.errorCode??'SPECIALIST_EXECUTION_FAILED');return w;}
+    await this.store.recordInitiation(w.id,claim.attempt.id,{provider:'specialist',externalExecutionId:result.externalExecutionId},owner);
+    if(w.status==='ROUTED')await this.store.transitionWorkflow(w,'SPECIALIST_RUNNING','orchestrator','orchestration',{planId:plan.id,planStageId:stage.id},claim.stage.id);
+    const artifact=await this.store.addArtifact(w.id,stage.order===0?'specialist_output':'orchestration_specialist_output',result.output,{planId:plan.id,planStageId:stage.id,specialistId:specialist.specialistId});
+    await this.store.completeStage(w.id,claim.attempt.id,result.externalExecutionId,artifact.id,{planId:plan.id,planStageId:stage.id},owner);
+    await planStore.updateOrchestrationPlanStage(plan.id,stage.id,'COMPLETE',artifact.id);
+  }
+  await planStore.updateOrchestrationPlan(plan.id,'COMPLETE');
+  if(w.status==='ROUTED')await this.store.transitionWorkflow(w,'SPECIALIST_RUNNING','orchestrator','orchestration',{planId:plan.id});
+  if(w.status==='SPECIALIST_RUNNING')await this.store.transitionWorkflow(w,'SPECIALIST_COMPLETE','orchestrator','orchestration',{planId:plan.id});
+  if(w.workflowType==='software')return w;
+  await this.store.transitionWorkflow(w,'COMPLETE','orchestrator','orchestration',{planId:plan.id});
+  return w;
+ }
  private async advance(w:Workflow,owner:string,principal:ExecutionContext['principal']){if(!w.logicalSpecialistId)throw new Error('ROUTING_REQUIRED');const s=resolveRoutableSpecialist(w.logicalSpecialistId,await this.specialistCatalog());if(!s)throw new Error('INVALID_ROUTING_TARGET');
   const predefined=softwareDeliveryDefinitionFor(w);
   const assertActivation=async(target:Parameters<typeof assertSoftwareDeliveryActivation>[1])=>{if(predefined)assertSoftwareDeliveryActivation(w,target,await this.store.getStages(w.id),await this.store.getAttempts(w.id),await this.store.getArtifacts(w.id));};

@@ -383,6 +383,13 @@ returns durable evidence about the outcome.
   deployment credentials/provider connectivity and production backup/restore
   remain operational validation conditions rather than product-definition
   gaps.
+
+Collective specialist coverage is executable through a durable ordered
+orchestration plan. Plans reuse the existing workflow stage, attempt, artifact,
+authorization, and recovery boundaries; they are not caller-authored DAGs.
+The software-delivery workflow remains the supported Codex vertical slice, and
+specialists without an approved active runtime produce truthful manual handoff
+rather than fabricated execution.
 - **Scope caution:** security, persistence, and recovery controls are enabling
   infrastructure. They should remain invisible to the normal MVP user
   experience and should not displace implementation of missing user-facing

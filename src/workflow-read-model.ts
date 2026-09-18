@@ -1,8 +1,8 @@
-import { Workflow, RuntimeStatus } from './domain.js';
+import { OrchestrationPlan, OrchestrationPlanStage, Workflow, RuntimeStatus } from './domain.js';
 import { resolveRoutableSpecialist } from './registry.js';
 import { registry as builtInRegistry } from './registry.js';
 import { Specialist } from './domain.js';
-import { PersistenceStore, RoutingHistoryStore } from './store.js';
+import { OrchestrationPlanStore, PersistenceStore, RoutingHistoryStore } from './store.js';
 
 export interface WorkflowReadModel {
   id: string;
@@ -26,6 +26,7 @@ export interface WorkflowReadModel {
   approvalRequired: boolean;
   createdAt: string;
   updatedAt: string;
+  orchestrationPlan?: { plan: OrchestrationPlan; stages: OrchestrationPlanStage[] };
 }
 
 export async function readWorkflow(store: PersistenceStore & Partial<RoutingHistoryStore>, workflow: Workflow, catalog: Record<string, Specialist> = builtInRegistry): Promise<WorkflowReadModel> {
@@ -36,6 +37,9 @@ export async function readWorkflow(store: PersistenceStore & Partial<RoutingHist
   const attempts = await store.getAttempts(workflow.id);
   const started = attempts.some(attempt => attempt.initiationEvidence !== undefined && attempt.initiationEvidence !== null);
   const completed = workflow.status === 'COMPLETE' || attempts.some(attempt => attempt.state === 'SUCCEEDED');
+  const planStore=store as PersistenceStore&Partial<OrchestrationPlanStore>;
+  const plan=await planStore.getOrchestrationPlan?.(workflow.id);
+  const orchestrationPlan=plan?{plan,stages:await planStore.getOrchestrationPlanStages!(plan.id)}:undefined;
   return {
     id: workflow.id,
     requestId: workflow.requestId,
@@ -53,6 +57,7 @@ export async function readWorkflow(store: PersistenceStore & Partial<RoutingHist
     clarificationRequired: workflow.status === 'AWAITING_CLARIFICATION',
     approvalRequired: workflow.status === 'AWAITING_APPROVAL',
     createdAt: workflow.createdAt,
-    updatedAt: workflow.updatedAt
+    updatedAt: workflow.updatedAt,
+    ...(orchestrationPlan?{orchestrationPlan}: {})
   };
 }

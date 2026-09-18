@@ -24,7 +24,7 @@ test('PostgreSQL startup schema verification fails closed when required tables a
 });
 
 test('PostgreSQL startup schema verification accepts the complete required table set',async()=>{
-  const required=['workflows','workflow_events','workflow_stages','workflow_attempts','artifacts','request_idempotency','routing_decisions','routing_candidates','routing_clarifications','workflow_approvals','specialists'];
+  const required=['workflows','workflow_events','workflow_stages','workflow_attempts','artifacts','request_idempotency','routing_decisions','routing_candidates','routing_clarifications','workflow_approvals','specialists','orchestration_plans','orchestration_plan_stages'];
   const store=new PgStore('postgres://unused');
   (store as any).pool={query:async()=>({rows:required.map(table_name=>({table_name}))})};
   await store.verifySchema();

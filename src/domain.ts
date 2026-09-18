@@ -2,6 +2,8 @@ export type WorkflowType = 'software' | 'non_code';
 export type WorkflowStatus = 'CREATED'|'ROUTED'|'AWAITING_CLARIFICATION'|'AWAITING_APPROVAL'|'SPECIALIST_RUNNING'|'SPECIALIST_COMPLETE'|'CODEX_PROMPT_READY'|'CODEX_RUNNING'|'CODEX_COMPLETE'|'VALIDATION_RUNNING'|'COMPLETE'|'FAILED'|'MANUAL_HANDOFF_REQUIRED';
 export type StageType = 'specialist'|'prompt_builder'|'codex'|'validation';
 export type AttemptState = 'CLAIMED'|'STARTING'|'RUNNING'|'SUCCEEDED'|'FAILED_TO_START'|'FAILED'|'TIMED_OUT'|'CANCELLED'|'STATUS_UNKNOWN';
+export type OrchestrationPlanStatus = 'PLANNED'|'RUNNING'|'COMPLETE'|'FAILED'|'MANUAL_HANDOFF_REQUIRED';
+export type OrchestrationPlanStageStatus = 'PENDING'|'RUNNING'|'COMPLETE'|'FAILED'|'MANUAL_HANDOFF_REQUIRED';
 export type RuntimeStatus = 'ACTIVE'|'MANUAL_ONLY'|'UNVERIFIED'|'DISABLED';
 export type RegistryReconciliationStatus = 'MATCHED'|'NEW_UNREVIEWED'|'POSSIBLE_RENAME'|'METADATA_CHANGED'|'MISSING_FROM_INVENTORY'|'DUPLICATE_OR_AMBIGUOUS'|'PROVIDER_UNAVAILABLE';
 export type RegistryFreshness = 'VERIFIED'|'UNVERIFIED';
@@ -40,7 +42,9 @@ export interface CodexPrompt { task_summary:string; implementation_instructions:
 export interface ValidationOutput { verdict:'PASS'|'PASS_WITH_CHANGES'|'FAIL'; blocking_findings:string[]; non_blocking_findings:string[]; remediation_requirements:string[]; }
 export interface Stage { id:string; workflowId:string; stageType:StageType; logicalStageKey:string; runtimeId?:string; status:'PENDING'|'RUNNING'|'COMPLETE'|'FAILED'; attempt:number; externalExecutionId?:string; outputArtifactId?:string; evidence?:unknown; }
 export interface Attempt { id:string; workflowId:string; stageId:string; logicalStageKey:string; attemptNumber:number; ownerId:string; state:AttemptState; initiationEvidence?:unknown; terminalEvidence?:unknown; }
-export interface Artifact { id:string; workflowId:string; artifactType:string; contentType:string; contentJson:unknown; contentHash:string; }
+export interface Artifact { id:string; workflowId:string; artifactType:string; contentType:string; contentJson:unknown; contentHash:string; planId?:string; planStageId?:string; specialistId?:string; }
+export interface OrchestrationPlan { id:string; workflowId:string; version:number; status:OrchestrationPlanStatus; reason:string; createdAt:string; updatedAt:string; }
+export interface OrchestrationPlanStage { id:string; planId:string; workflowId:string; specialistId:string; purpose:string; dependencies:string[]; status:OrchestrationPlanStageStatus; order:number; outputArtifactId?:string; }
 export interface Workflow { id:string; requestId:string; workflowType:WorkflowType; workflowDefinitionId?:'SOFTWARE_DELIVERY'; logicalSpecialistId:string|null; runtimeId?:string; status:WorkflowStatus; validationRequired?:boolean; effectiveClassification?:'PUBLIC'|'INTERNAL'|'CONFIDENTIAL'|'RESTRICTED'; objective:string; context:unknown; requiresImplementation:boolean; failureCode?:string; failureMessage?:string; version:number; createdAt:string; updatedAt:string; }
 export const LEGAL: Record<WorkflowStatus, WorkflowStatus[]> = {
   CREATED:['ROUTED','AWAITING_CLARIFICATION'], ROUTED:['AWAITING_CLARIFICATION','AWAITING_APPROVAL','SPECIALIST_RUNNING','MANUAL_HANDOFF_REQUIRED','FAILED'], AWAITING_CLARIFICATION:['ROUTED','FAILED','MANUAL_HANDOFF_REQUIRED'], AWAITING_APPROVAL:['ROUTED','FAILED','MANUAL_HANDOFF_REQUIRED'], SPECIALIST_RUNNING:['SPECIALIST_COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], SPECIALIST_COMPLETE:['CODEX_PROMPT_READY','COMPLETE','FAILED'], CODEX_PROMPT_READY:['CODEX_RUNNING','FAILED'], CODEX_RUNNING:['CODEX_COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], CODEX_COMPLETE:['VALIDATION_RUNNING','COMPLETE','FAILED'], VALIDATION_RUNNING:['COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'], COMPLETE:[], FAILED:[], MANUAL_HANDOFF_REQUIRED:[]

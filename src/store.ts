@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { ApprovalRequest, Artifact, Attempt, AttemptState, RoutingCandidate, RoutingClarification, RoutingDecision, Specialist, Stage, StageType, Workflow, WorkflowStatus, assertTransition } from './domain.js';
+import { ApprovalRequest, Artifact, Attempt, AttemptState, OrchestrationPlan, OrchestrationPlanStage, OrchestrationPlanStageStatus, RoutingCandidate, RoutingClarification, RoutingDecision, Specialist, Stage, StageType, Workflow, WorkflowStatus, assertTransition } from './domain.js';
 import { mergeSpecialistCatalog } from './specialist-catalog.js';
+import { validateOrchestrationPlan } from './orchestration-plan.js';
 
 export interface Event { id:string; workflowId:string; sequence:number; eventType:string; actorType:string; actorId:string; stageId?:string; metadata?:unknown; createdAt:string; }
 export interface RequestIdempotency { callerId:string; operation:string; key:string; requestHash:string; workflowId:string; resultReference?:string; }
@@ -44,19 +45,26 @@ export interface PersistenceStore {
   failStage(workflowId:string,attemptId:string,state:AttemptState,evidence?:unknown,ownerId?:string):Attempt|Promise<Attempt>;
   markStageStatusUnknown(workflowId:string,attemptId:string,evidence:unknown):Attempt|Promise<Attempt>;
   transitionWorkflow(w:Workflow,to:WorkflowStatus,actorType:string,actorId:string,metadata?:unknown,stageId?:string):Workflow|Promise<Workflow>;
-  addArtifact(workflowId:string,type:string,content:unknown):Artifact|Promise<Artifact>; getArtifacts(id:string):Artifact[]|Promise<Artifact[]>;
+  addArtifact(workflowId:string,type:string,content:unknown,provenance?:{planId?:string;planStageId?:string;specialistId?:string}):Artifact|Promise<Artifact>; getArtifacts(id:string):Artifact[]|Promise<Artifact[]>;
   appendEvent(event:Omit<Event,'id'|'sequence'|'createdAt'>):Event|Promise<Event>; getEvents(id:string):Event[]|Promise<Event[]>;
   getRequestIdempotency(callerId:string,operation:string,key:string):RequestIdempotency|undefined|Promise<RequestIdempotency|undefined>;
   reconstructWorkflow(id:string):unknown|Promise<unknown>;
   exclusive?<T>(id:string,fn:()=>Promise<T>):Promise<T>;
+}
+export interface OrchestrationPlanStore {
+  createOrchestrationPlan(plan:OrchestrationPlan, stages:OrchestrationPlanStage[]):Promise<{plan:OrchestrationPlan;stages:OrchestrationPlanStage[]}>;
+  getOrchestrationPlan(workflowId:string):Promise<OrchestrationPlan|undefined>;
+  getOrchestrationPlanStages(planId:string):Promise<OrchestrationPlanStage[]>;
+  updateOrchestrationPlan(planId:string,status:OrchestrationPlan['status']):Promise<OrchestrationPlan>;
+  updateOrchestrationPlanStage(planId:string,stageId:string,status:OrchestrationPlanStageStatus,outputArtifactId?:string):Promise<OrchestrationPlanStage>;
 }
 export interface SpecialistCatalogStore {
   getEffectiveSpecialists():Promise<Record<string, Specialist>>;
   createDynamicSpecialist(specialist: Specialist):Promise<Specialist>;
 }
 
-export class MemoryStore implements PersistenceStore,RoutingHistoryStore,RoutingResolutionStore,ClarificationStore,OverrideStore,SpecialistCatalogStore {
-  workflows=new Map<string,Workflow>(); stages=new Map<string,Stage>(); attempts=new Map<string,Attempt>(); artifacts=new Map<string,Artifact>(); events=new Map<string,Event[]>(); idem=new Map<string,RequestIdempotency>(); locks=new Map<string,Promise<void>>(); dynamicSpecialists=new Map<string,Specialist>();
+export class MemoryStore implements PersistenceStore,RoutingHistoryStore,RoutingResolutionStore,ClarificationStore,OverrideStore,SpecialistCatalogStore,OrchestrationPlanStore {
+  workflows=new Map<string,Workflow>(); stages=new Map<string,Stage>(); attempts=new Map<string,Attempt>(); artifacts=new Map<string,Artifact>(); events=new Map<string,Event[]>(); idem=new Map<string,RequestIdempotency>(); locks=new Map<string,Promise<void>>(); dynamicSpecialists=new Map<string,Specialist>(); orchestrationPlans=new Map<string,OrchestrationPlan>(); orchestrationPlanStages=new Map<string,OrchestrationPlanStage[]>();
   routingDecisions=new Map<string,RoutingDecision>(); routingCandidates=new Map<string,RoutingCandidate[]>(); routingClarifications=new Map<string,RoutingClarification>();
   getEffectiveSpecialistsSync(){return mergeSpecialistCatalog([...this.dynamicSpecialists.values()]);}
   async getEffectiveSpecialists(){return this.getEffectiveSpecialistsSync();}
@@ -73,7 +81,12 @@ export class MemoryStore implements PersistenceStore,RoutingHistoryStore,Routing
   failStage(workflowId:string,attemptId:string,state:AttemptState,evidence?:unknown,ownerId?:string){this.activeWorkflow(workflowId);const a=this.attempts.get(attemptId);if(!a)throw new Error('ATTEMPT_NOT_FOUND');if(a.workflowId!==workflowId)throw new Error('ATTEMPT_WORKFLOW_MISMATCH');if(ownerId&&a.ownerId!==ownerId)throw new Error('ATTEMPT_NOT_OWNER');a.state=state;a.terminalEvidence=evidence;this.stages.get(a.stageId)!.status='FAILED';return a;}
   markStageStatusUnknown(w:string,id:string,e:unknown){return this.failStage(w,id,'STATUS_UNKNOWN',e);}
   transitionWorkflow(w:Workflow,to:WorkflowStatus,actorType:string,actorId:string,metadata?:unknown,stageId?:string){const current=this.workflows.get(w.id);if(!current)throw new Error('WORKFLOW_NOT_FOUND');assertTransition(current.status,to);current.status=to;current.version++;current.updatedAt=new Date().toISOString();this.appendEvent({workflowId:current.id,eventType:`WORKFLOW_${to}`,actorType,actorId,stageId,metadata});return current;}
-  addArtifact(workflowId:string,type:string,content:unknown){if(!this.workflows.has(workflowId))throw new Error('WORKFLOW_NOT_FOUND');const json=JSON.stringify(content);const a:Artifact={id:randomUUID(),workflowId,artifactType:type,contentType:'application/json',contentJson:content,contentHash:createHash('sha256').update(json).digest('hex')};this.artifacts.set(a.id,a);this.appendEvent({workflowId,eventType:'ARTIFACT_CREATED',actorType:'orchestrator',actorId:'artifact-store',metadata:{artifactId:a.id,artifactType:type,contentHash:a.contentHash}});return a;}
+  addArtifact(workflowId:string,type:string,content:unknown,provenance:{planId?:string;planStageId?:string;specialistId?:string}={}){if(!this.workflows.has(workflowId))throw new Error('WORKFLOW_NOT_FOUND');if(provenance.planStageId&&!provenance.planId)throw new Error('ARTIFACT_PLAN_REQUIRED');if(provenance.planId&&(!this.orchestrationPlans.has(provenance.planId)||this.orchestrationPlans.get(provenance.planId)!.workflowId!==workflowId))throw new Error('ARTIFACT_PLAN_WORKFLOW_MISMATCH');if(provenance.planStageId){const stage=this.orchestrationPlanStages.get(provenance.planId!)?.find(item=>item.id===provenance.planStageId);if(!stage||stage.workflowId!==workflowId)throw new Error('ARTIFACT_PLAN_STAGE_MISMATCH');}const json=JSON.stringify(content);if(Buffer.byteLength(json,'utf8')>4*1024*1024)throw new Error('ARTIFACT_TOO_LARGE');const a:Artifact={id:randomUUID(),workflowId,artifactType:type,contentType:'application/json',contentJson:content,contentHash:createHash('sha256').update(json).digest('hex'),...(provenance.planId?{planId:provenance.planId}:{}),...(provenance.planStageId?{planStageId:provenance.planStageId}:{}),...(provenance.specialistId?{specialistId:provenance.specialistId}:{})};this.artifacts.set(a.id,a);this.appendEvent({workflowId,eventType:'ARTIFACT_CREATED',actorType:'orchestrator',actorId:'artifact-store',metadata:{artifactId:a.id,artifactType:type,contentHash:a.contentHash,...(a.planId?{planId:a.planId}:{}),...(a.planStageId?{planStageId:a.planStageId}:{}),...(a.specialistId?{specialistId:a.specialistId}:{})}});return a;}
+  async createOrchestrationPlan(plan:OrchestrationPlan,stages:OrchestrationPlanStage[]){if(this.orchestrationPlans.has(plan.id)||[...this.orchestrationPlans.values()].some(existing=>existing.workflowId===plan.workflowId&&existing.version===plan.version))throw new Error('ORCHESTRATION_PLAN_DUPLICATE');const workflow=this.workflows.get(plan.workflowId);if(!workflow)throw new Error('WORKFLOW_NOT_FOUND');validateOrchestrationPlan(plan,stages,this.getEffectiveSpecialistsSync());this.orchestrationPlans.set(plan.id,plan);this.orchestrationPlanStages.set(plan.id,stages.map(stage=>({...stage,dependencies:[...stage.dependencies]})));this.appendEvent({workflowId:plan.workflowId,eventType:'ORCHESTRATION_PLAN_CREATED',actorType:'orchestrator',actorId:'planner',metadata:{planId:plan.id,version:plan.version,stageIds:stages.map(stage=>stage.id),reason:plan.reason}});return {plan,stages};}
+  async getOrchestrationPlan(workflowId:string){return [...this.orchestrationPlans.values()].find(plan=>plan.workflowId===workflowId);}
+  async getOrchestrationPlanStages(planId:string){return (this.orchestrationPlanStages.get(planId)??[]).map(stage=>({...stage,dependencies:[...stage.dependencies]}));}
+  async updateOrchestrationPlan(planId:string,status:OrchestrationPlan['status']){const plan=this.orchestrationPlans.get(planId);if(!plan)throw new Error('ORCHESTRATION_PLAN_NOT_FOUND');const updated={...plan,status,updatedAt:new Date().toISOString()};this.orchestrationPlans.set(planId,updated);this.appendEvent({workflowId:plan.workflowId,eventType:`ORCHESTRATION_PLAN_${status}`,actorType:'orchestrator',actorId:'planner',metadata:{planId}});return updated;}
+  async updateOrchestrationPlanStage(planId:string,stageId:string,status:OrchestrationPlanStageStatus,outputArtifactId?:string){const stages=this.orchestrationPlanStages.get(planId);const stage=stages?.find(item=>item.id===stageId);if(!stage)throw new Error('ORCHESTRATION_PLAN_STAGE_NOT_FOUND');stage.status=status;if(outputArtifactId)stage.outputArtifactId=outputArtifactId;this.appendEvent({workflowId:stage.workflowId,eventType:`ORCHESTRATION_STAGE_${status}`,actorType:'orchestrator',actorId:stage.specialistId,metadata:{planId,planStageId:stageId,specialistId:stage.specialistId,outputArtifactId}});return {...stage,dependencies:[...stage.dependencies]};}
   getArtifacts(id:string){return [...this.artifacts.values()].filter(x=>x.workflowId===id);}
   appendEvent(input:Omit<Event,'id'|'sequence'|'createdAt'>){if(!this.workflows.has(input.workflowId))throw new Error('WORKFLOW_NOT_FOUND');const list=this.events.get(input.workflowId)??[];const e={...input,id:randomUUID(),sequence:list.length+1,createdAt:new Date().toISOString()};list.push(e);this.events.set(input.workflowId,list);return e;}
   getEvents(id:string){return this.events.get(id)??[];}
