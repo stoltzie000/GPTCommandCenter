@@ -7,8 +7,8 @@ import { loadConfig } from '../src/config.js';
 const migrationDirectory = join(process.cwd(), 'db', 'migrations');
 
 test('Task 15 migration set is ordered, complete, and repeatable by construction', () => {
-  const files = readdirSync(migrationDirectory).filter(file => /^00[1-6]_.*\.sql$/.test(file)).sort();
-  assert.deepEqual(files.map(file => file.slice(0, 3)), ['001', '002', '003', '004', '005', '006']);
+  const files = readdirSync(migrationDirectory).filter(file => /^00[1-7]_.*\.sql$/.test(file)).sort();
+  assert.deepEqual(files.map(file => file.slice(0, 3)), ['001', '002', '003', '004', '005', '006', '007']);
   for (const file of files) assert.match(readFileSync(join(migrationDirectory, file), 'utf8'), /(?:CREATE|ALTER|DROP)\s+(?:TABLE|EXTENSION|CONSTRAINT)|CREATE EXTENSION IF NOT EXISTS/);
 });
 

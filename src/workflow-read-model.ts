@@ -1,5 +1,7 @@
 import { Workflow, RuntimeStatus } from './domain.js';
 import { resolveRoutableSpecialist } from './registry.js';
+import { registry as builtInRegistry } from './registry.js';
+import { Specialist } from './domain.js';
 import { PersistenceStore, RoutingHistoryStore } from './store.js';
 
 export interface WorkflowReadModel {
@@ -26,10 +28,10 @@ export interface WorkflowReadModel {
   updatedAt: string;
 }
 
-export async function readWorkflow(store: PersistenceStore & Partial<RoutingHistoryStore>, workflow: Workflow): Promise<WorkflowReadModel> {
+export async function readWorkflow(store: PersistenceStore & Partial<RoutingHistoryStore>, workflow: Workflow, catalog: Record<string, Specialist> = builtInRegistry): Promise<WorkflowReadModel> {
   const latest = await store.getLatestRoutingDecision?.(workflow.id);
   const selectedSpecialistId = latest ? latest.selectedSpecialistId : workflow.logicalSpecialistId;
-  const specialist = selectedSpecialistId ? resolveRoutableSpecialist(selectedSpecialistId) : undefined;
+  const specialist = selectedSpecialistId ? resolveRoutableSpecialist(selectedSpecialistId, catalog) : undefined;
   const runtimeStatus = specialist?.runtimeStatus ?? specialist?.runtime?.status ?? null;
   const attempts = await store.getAttempts(workflow.id);
   const started = attempts.some(attempt => attempt.initiationEvidence !== undefined && attempt.initiationEvidence !== null);

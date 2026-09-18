@@ -2,6 +2,7 @@ import { Specialist, RuntimeStatus, SpecialistRole } from './domain.js';
 
 export interface SpecialistReadModel {
   id: string;
+  origin: 'BUILTIN'|'DYNAMIC';
   displayName: string;
   description: string;
   ownership: string[];
@@ -28,6 +29,7 @@ export function readSpecialist(specialist: Specialist): SpecialistReadModel {
   const manualHandoffAvailable = runtimeStatus === 'MANUAL_ONLY' && typeof specialist.chatgptUrl === 'string' && specialist.chatgptUrl.length > 0;
   return {
     id: specialist.specialistId,
+    origin: specialist.origin ?? 'BUILTIN',
     displayName: specialist.displayName,
     description: specialist.description,
     ownership: [...specialist.primaryOwnership],

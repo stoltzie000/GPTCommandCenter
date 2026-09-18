@@ -6,7 +6,7 @@ const noRuntime = (role: SpecialistRole, primaryOwnership: string[], capabilitie
   exclusions: [], overlapsWith: [], upstreamSpecialists: [], downstreamSpecialists: [],
   status: role === 'UNKNOWN_PENDING_REVIEW' ? 'INACTIVE' : 'ACTIVE', runtimeStatus: 'UNVERIFIED',
   runtimeId: null, registryVersion: '1.0.0', lastReviewedAt: reviewedAt, canValidateCodex: false,
-  role, canonical: true, routingApproved
+  role, canonical: true, routingApproved, origin: 'BUILTIN'
 });
 const entry = (id: string, displayName: string, description: string, role: SpecialistRole, ownership: string[], capabilities: string[], routingApproved = true): Specialist => ({
   ...noRuntime(role, ownership, capabilities, routingApproved), id, specialistId: id, displayName, description
@@ -41,9 +41,9 @@ export const registry: Record<string, Specialist> = {
   'policy-document-reviewer': entry('policy-document-reviewer', 'Policy Document Reviewer', 'Auto-insurance policy document review specialist.', 'ROUTABLE_SPECIALIST', ['auto-insurance policy review'], ['policy document review']),
   'equipment-repair-assistant': entry('equipment-repair-assistant', 'Equipment & Repair Assistant', 'Equipment and appliance repair specialist.', 'ROUTABLE_SPECIALIST', ['equipment and appliance repair'], ['equipment repair'])
 };
-export function resolveSpecialist(id:string) {
+export function resolveSpecialist(id:string, input: Record<string, Specialist> = registry) {
   if (typeof id !== 'string' || !id.trim()) return undefined;
-  const specialist = registry[id];
+  const specialist = input[id];
   return specialist?.id === id ? specialist : undefined;
 }
 
@@ -57,8 +57,8 @@ export function isCanonicalRoutableSpecialist(specialist: Specialist | undefined
     && specialist.role !== 'UNKNOWN_PENDING_REVIEW';
 }
 
-export function resolveRoutableSpecialist(id: string) {
-  const specialist = resolveSpecialist(id);
+export function resolveRoutableSpecialist(id: string, input: Record<string, Specialist> = registry) {
+  const specialist = resolveSpecialist(id, input);
   return isCanonicalRoutableSpecialist(specialist) ? specialist : undefined;
 }
 

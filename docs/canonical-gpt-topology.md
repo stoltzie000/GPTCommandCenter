@@ -283,14 +283,17 @@ contracts described above.
 ## Canonical Product and MVP Interpretation
 
 This section records the product interpretation supported by this document and
-the current README. It distinguishes the intended specialist ecosystem from
-the smaller workflow that is currently executable.
+the current README. It distinguishes the intended open specialist ecosystem
+from the smaller workflow that is currently executable. The original 25
+entries are protected built-in seeds, not a product-level maximum.
 
 ### Product definition
 
-- **Product:** GPT Command Center, an orchestration and evidence-gated
-  workflow system for routing a user's request to the appropriate specialist
-  and, when authorized and applicable, carrying the work through Codex and
+- **Product:** GPT Command Center, an extensible orchestration and
+  evidence-gated workflow system for routing a user's request to an existing
+  specialist, coordinating several specialists where appropriate, or creating
+  a validated specialist when the catalog lacks sufficient capability
+  coverage. When authorized and applicable, work proceeds through Codex and
   validation.
 - **Primary user:** A person submitting a task that may require a domain
   specialist, repository work, planning, or a builder utility. The source
@@ -298,7 +301,8 @@ the smaller workflow that is currently executable.
   segment.
 - **Core problem:** A request should reach the right GPT-owned intent area,
   remain within approved authority, and produce a reviewable outcome instead
-  of an unbounded or opaque handoff.
+  of an unbounded or opaque handoff. The user should not need to know whether
+  the needed specialist already exists.
 - **Core workflow:** request intake → canonical routing → focused
   clarification or approval when required → specialist analysis → optional
   Codex prompt/build execution → validation → result, evidence, or explicit
@@ -351,8 +355,9 @@ returns durable evidence about the outcome.
 - standalone direct production support for every builder/workflow utility;
 - broader multi-stage workflows beyond the implemented `SOFTWARE_DELIVERY`
   contract;
-- specialist creation or registry mutation, equivalent-specialist sets, and
-  automatic generic fallback ownership.
+- unrestricted anonymous specialist mutation, arbitrary runtime/tool grants,
+  equivalent-specialist sets without review, and automatic generic fallback
+  ownership.
 
 **Non-goals**
 
@@ -370,9 +375,10 @@ returns durable evidence about the outcome.
   bounded software-delivery orchestration, Codex handoff/execution stages,
   validation, recovery/manual handoff, and operational readiness controls.
 - **Partially implemented:** the broader 25-entry ecosystem is represented
-  canonically and logically routable where approved, but most entries have no
-  configured executable runtime; direct standalone paths for some utilities
-  remain future work.
+  canonically and logically routable where approved, and validated dynamic
+  specialists can now be added to the effective catalog. Most entries and
+  newly created specialists still have no configured executable runtime;
+  direct standalone paths for some utilities remain future work.
 - **Product-critical gap:** none for the documented software-delivery MVP;
   deployment credentials/provider connectivity and production backup/restore
   remain operational validation conditions rather than product-definition
