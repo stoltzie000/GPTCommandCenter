@@ -14,14 +14,17 @@ const specialist=process.env.OPENAI_API_KEY?new OpenAISpecialistExecutor(process
 const validation=process.env.OPENAI_API_KEY?new OpenAIValidationExecutor(process.env.OPENAI_API_KEY):new UnavailableValidation();
 const codex=process.env.CODEX_ENABLED==='true'?new RootlessContainerCodexExecutor():new UnavailableCodex();
 const app=new Orchestrator(store,specialist,new SafePromptBuilder(),codex,validation,config.repositories); const token=config.apiToken;
+let shuttingDown=false;
 function json(res:any,status:number,body:unknown){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}
 function assertAllowedKeys(body:any,allowed:readonly string[]){if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!allowed.includes(key)))throw new Error('INVALID_REQUEST');}
 async function persistedReadModel(id:string,principal:any){const persisted=await store.getWorkflow(id);if(!persisted)throw new Error('WORKFLOW_NOT_FOUND');assertWorkflowPrincipal(persisted,principal);return readWorkflow(store,persisted);}
 async function commandResponse(id:string,decisionId:string,principal:any){const workflow=await persistedReadModel(id,principal);const decisions=await readRoutingDecisions(store,id);return {...workflow,workflow,decision:decisions.find(decision=>decision.id===decisionId)};}
 const server=createServer(async(req,res)=>{try{
   if(req.url==='/health'&&req.method==='GET')return json(res,200,{status:'ok'});
+  if(shuttingDown)return json(res,503,{status:'shutting_down'});
   if(req.url==='/ready'&&req.method==='GET'){
-    if(config.appMode==='deployed'&&store instanceof PgStore)await store.pool.query('SELECT 1');
+    if(shuttingDown)return json(res,503,{status:'not_ready'});
+    try{if(config.appMode==='deployed'&&store instanceof PgStore)await store.pool.query('SELECT 1');}catch{return json(res,503,{status:'not_ready'});}
     const readiness=inventoryReadiness(config.specialistInventoryProvider,startupReconciliation.freshness);
     if(!readiness.ready){
       return json(res,503,{status:'not_ready',inventoryFreshness:readiness.inventoryFreshness});
@@ -56,7 +59,9 @@ const server=createServer(async(req,res)=>{try{
   if(req.method==='GET'&&action==='result'){if(!['COMPLETE','FAILED','MANUAL_HANDOFF_REQUIRED'].includes(workflow.status))return json(res,409,{error:'RESULT_NOT_READY'});return json(res,200,{workflow,artifacts:await store.getArtifacts(id)});}
   return json(res,405,{error:'METHOD_NOT_ALLOWED'});
 }catch(e){const code=e instanceof Error?e.message:'INVALID_REQUEST';const status=['AUTHENTICATION_FAILED','AUTHENTICATION_REQUIRED'].includes(code)?401:['AUTHORIZATION_FAILED','REPOSITORY_NOT_ALLOWED','REPOSITORY_REF_NOT_ALLOWED','REPOSITORY_REF_INVALID'].includes(code)?403:code==='REQUEST_TOO_LARGE'?413:400;const exposed=['INVALID_REQUEST','REQUEST_TOO_LARGE','UNKNOWN_SPECIALIST','WORKFLOW_NOT_FOUND','REPOSITORY_NOT_ALLOWED','REPOSITORY_REF_NOT_ALLOWED','REPOSITORY_REF_INVALID','IDEMPOTENCY_KEY_REUSED','INVALID_OVERRIDE_TARGET','STALE_ROUTING_DECISION','OVERRIDE_STATE_UNSAFE','ROUTING_DECISION_NOT_FOUND','CLARIFICATION_NOT_FOUND','CLARIFICATION_ALREADY_ANSWERED','ROUTING_UNRESOLVED','APPROVAL_NOT_FOUND','INVALID_APPROVAL_DECISION','APPROVAL_ALREADY_DECIDED','APPROVAL_WORKFLOW_STATE_MISMATCH','RECOVERY_STATE_UNSAFE','RECOVERY_ATTEMPT_NOT_ACTIVE','INVALID_RECOVERY_REASON','WORKFLOW_NOT_ACTIVE'];return json(res,status,{error:exposed.includes(code)?code:status===401?'AUTHENTICATION_FAILED':'INVALID_REQUEST'});}});
-if(store instanceof PgStore)await store.pool.query('SELECT 1');
+if(store instanceof PgStore){await store.pool.query('SELECT 1');await store.verifySchema();}
 const startupReconciliation=await reconcileSpecialistInventory(createSpecialistInventoryProvider(config.specialistInventoryProvider,config.specialistInventoryFile),registry);
 console.log(JSON.stringify({event:'specialist_inventory_reconciled',freshness:startupReconciliation.freshness,outcomes:startupReconciliation.outcomes.map(outcome=>outcome.status)}));
+const shutdown=async(signal:string)=>{if(shuttingDown)return;shuttingDown=true;console.log(JSON.stringify({event:'server_shutdown_started',signal}));const force=setTimeout(()=>process.exit(1),10000);force.unref();server.close(async()=>{if(store instanceof PgStore)await store.pool.end().catch(()=>{});clearTimeout(force);console.log(JSON.stringify({event:'server_shutdown_complete'}));process.exit(0);});};
+process.once('SIGTERM',()=>void shutdown('SIGTERM'));process.once('SIGINT',()=>void shutdown('SIGINT'));
 server.listen(Number(process.env.PORT??8080),()=>console.log(JSON.stringify({event:'server_started',port:Number(process.env.PORT??8080),mode:config.appMode})));

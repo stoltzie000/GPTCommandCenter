@@ -14,7 +14,7 @@ Greenfield TypeScript/Node service implementing evidence-gated specialist → Co
 
 ## Run
 
-`npm install`, copy `.env.example` to `.env`, then apply `db/migrations/001_initial.sql`, `db/migrations/002_task22c_routing_history.sql`, `db/migrations/003_task22d_clarifications.sql`, `db/migrations/004_task22e_approvals.sql`, and `db/migrations/005_task22h_override_clarification.sql`, run `npm run build`, and `npm start`. `npm test` runs the state/evidence tests. `POST /v1/workflows`, `POST /v1/workflows/:id/run`, `GET /v1/workflows/:id`, `/events`, `/result`, clarification read/response routes, and approval read/decision routes are implemented, plus `/health` and `/ready`.
+`npm install`, copy `.env.example` to `.env`, then apply migrations `001` through `006` in filename order, run `npm run build`, and `npm start`. Production startup requires `APP_MODE=deployed`, token authentication, PostgreSQL, and all current migration tables; it fails before listening when those requirements are missing or incompatible. `npm test` runs the state/evidence tests. `POST /v1/workflows`, `POST /v1/workflows/:id/run`, `GET /v1/workflows/:id`, `/events`, `/result`, clarification read/response routes, and approval read/decision routes are implemented, plus `/health` and `/ready`.
 
 ## Security and limitations
 
@@ -41,3 +41,11 @@ Readiness behavior:
 - `file` + `VERIFIED` -> ready
 - `file` + `UNVERIFIED` -> `503 not_ready`
 - discovered specialists are never auto-approved or auto-routable
+
+## Production operations
+
+PostgreSQL is the durable production source of truth; `MemoryStore` is available only in explicitly selected local mode and is not restart-durable. Apply migrations `001` through `006` before starting a deployed instance. The application verifies database connectivity and required tables before it begins listening, while `/health` reports process liveness and `/ready` reports dependency/inventory readiness.
+
+Workflow events, attempts, artifacts, routing history, clarifications, approvals, and idempotency records are retained in PostgreSQL until an operator applies an approved data-lifecycle policy. This repository does not implement automatic deletion or a backup service. Backups and restores are external operational responsibilities and must restore the related workflow tables together to preserve provenance and state integrity. Temporary execution workspaces are removed after successful or failed clone/executor paths; interrupted processes are represented through the existing recovery/manual-handoff flow.
+
+SIGTERM/SIGINT stop readiness, stop accepting new work, close the HTTP server, and close the PostgreSQL pool. In-flight external execution is not claimed successful by shutdown; recovery/manual handoff remains the safe path when completion is uncertain.
