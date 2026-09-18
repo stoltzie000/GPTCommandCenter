@@ -7,7 +7,7 @@ import { PgStore } from '../src/pg-store.js';
 
 const url = process.env.PG_TEST_URL;
 const id = () => randomUUID();
-const input = (requestId = id()) => ({requestId,workflowType:'non_code',logicalSpecialistId:'previous-specialist',runtimeId:'previous-runtime',validationRequired:false,effectiveClassification:'PUBLIC',objective:'routing history api',context:{},requiresImplementation:false});
+const input = (requestId = id()) => ({requestId,workflowType:'non_code',logicalSpecialistId:'previous-specialist',runtimeId:'previous-runtime',validationRequired:false,effectiveClassification:'PUBLIC',objective:'routing history api',context:{principal:{id:'operator',roles:[],scopes:[],authType:'token'}},requiresImplementation:false});
 const initial = workflowId => ({id:id(),workflowId,selectedSpecialistId:'previous-specialist',routingConfidence:'CLEAR',routingReason:'persisted internal route',decisionType:'INITIAL',supersedesDecisionId:null,createdAt:'2026-09-15T00:00:00.000Z'});
 const start = (port) => { const child=spawn(process.execPath,['dist/src/server.js'],{env:{...process.env,APP_MODE:'deployed',AUTH_MODE:'token',DATABASE_URL:url,ORCHESTRATOR_API_TOKEN:'test-only-token',AUTH_PRINCIPALS:JSON.stringify({'test-only-token':{id:'operator',roles:[],scopes:[]}}),PORT:String(port)},stdio:['ignore','pipe','pipe']}); return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('SERVER_START_TIMEOUT')),5000);child.stdout.on('data',chunk=>{if(String(chunk).includes('server_started')){clearTimeout(timer);resolve(child);}});child.on('error',reject);}); };
 const stop = child => new Promise(resolve => {child.once('exit',resolve);child.kill('SIGTERM');});

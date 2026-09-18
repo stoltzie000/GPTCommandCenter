@@ -46,6 +46,12 @@ Readiness behavior:
 
 PostgreSQL is the durable production source of truth; `MemoryStore` is available only in explicitly selected local mode and is not restart-durable. Apply migrations `001` through `006` before starting a deployed instance. The application verifies database connectivity and required tables before it begins listening, while `/health` reports process liveness and `/ready` reports dependency/inventory readiness.
 
+## Release validation
+
+Use a disposable PostgreSQL database for release validation; never run restore tests against production. Apply migrations in filename order, then run `npm run build`, `npm run lint`, `npm test`, and `npm audit --omit=dev`. PostgreSQL integration tests are enabled with `PG_TEST_URL`, for example `PGPASSWORD='<test-password>' PG_TEST_URL='postgresql://<user>@127.0.0.1:5433/<test-db>' npm test`.
+
+For a database recovery check, create a custom-format dump with `pg_dump -Fc -d <source-db> -f <backup-file>`, restore it into a separate empty database with `pg_restore --exit-on-error`, and verify application startup plus `/ready`. Restore the complete database so workflows, events, routing history, clarifications, approvals, attempts, artifacts, and idempotency records remain coherent. Provider validation requires deployment credentials and should use the repository's bounded executor/error tests plus a minimal non-destructive connectivity check; credentials must never be printed.
+
 Workflow events, attempts, artifacts, routing history, clarifications, approvals, and idempotency records are retained in PostgreSQL until an operator applies an approved data-lifecycle policy. This repository does not implement automatic deletion or a backup service. Backups and restores are external operational responsibilities and must restore the related workflow tables together to preserve provenance and state integrity. Temporary execution workspaces are removed after successful or failed clone/executor paths; interrupted processes are represented through the existing recovery/manual-handoff flow.
 
 SIGTERM/SIGINT stop readiness, stop accepting new work, close the HTTP server, and close the PostgreSQL pool. In-flight external execution is not claimed successful by shutdown; recovery/manual handoff remains the safe path when completion is uncertain.

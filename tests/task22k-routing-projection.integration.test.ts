@@ -82,7 +82,7 @@ test('Task 22K AMBIGUOUS routing leaves specialist unset and awaits clarificatio
       routingReason:'ownership unresolved',
       candidates:[
         candidate('architecture-security-advisor',1),
-        candidate('other-specialist',2)
+        candidate('policy-document-reviewer',2)
       ],
       requiresClarification:true,
       clarificationQuestion:'Which specialist should own this task?'

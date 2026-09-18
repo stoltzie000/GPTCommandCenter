@@ -7,7 +7,7 @@ import { PgStore } from '../src/pg-store.js';
 
 const url=process.env.PG_TEST_URL;
 const id=()=>randomUUID();
-const input=(requestId=id())=>({requestId,workflowType:'software' as const,logicalSpecialistId:'architecture-security-advisor',runtimeId:'runtime',validationRequired:true,effectiveClassification:'PUBLIC' as const,objective:'task22d api',context:{},requiresImplementation:true});
+const input=(requestId=id())=>({requestId,workflowType:'software' as const,logicalSpecialistId:'architecture-security-advisor',runtimeId:'runtime',validationRequired:true,effectiveClassification:'PUBLIC' as const,objective:'task22d api',context:{principal:{id:'test-caller',roles:[],scopes:[],authType:'token' as const}},requiresImplementation:true});
 
 test('Task 22D clarification API retrieves and submits durable clarification', {skip:!url}, async()=>{
   const store=new PgStore(url);const workflow=await store.createWorkflow(input(),'task22d-api','create');
