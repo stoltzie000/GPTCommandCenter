@@ -3,7 +3,7 @@ import {CodexPrompt,SoftwareOutput,validCodexPrompt,validSoftwareOutput,validVal
 import {resolveRoutableSpecialist} from './registry.js';
 import {ClarificationStore,OverrideStore,PersistenceStore,RoutingHistoryStore,RoutingResolutionStore,hash} from './store.js';
 import {CodexExecutor,PromptBuilderExecutor,SpecialistExecutor,ValidationExecutor} from './executors.js';
-import {assertAuthorizedCreation,assertExecutionContext,contextFromWorkflow,CreationContext,ExecutionContext,resolveRepository} from './trust.js';
+import {assertAuthorizedCreation,assertExecutionContext,assertWorkflowPrincipal,contextFromWorkflow,CreationContext,ExecutionContext,resolveRepository} from './trust.js';
 import {DeterministicRequestInterpreter,InterpretationProvider,interpretAndSelect,persistResolvedRouting,resolveRouting,routingDecision} from './routing.js';
 import {assertSoftwareDeliveryActivation,codexToValidationHandoff,promptToCodexHandoff,softwareDeliveryDefinitionFor,specialistToPromptHandoff} from './predefined-workflow.js';
 export class Orchestrator {
@@ -62,6 +62,7 @@ export class Orchestrator {
   if(pending.status!=='PENDING')throw new Error('CLARIFICATION_ALREADY_ANSWERED');
   const workflow=await this.store.getWorkflow(workflowId);
   if(!workflow)throw new Error('WORKFLOW_NOT_FOUND');
+  assertWorkflowPrincipal(workflow,principal);
   const raw=workflow.context as any;
   const repositoryId=raw?.resolvedRepository?.repositoryId??raw?.repositoryId;
   const hint=typeof requestedSpecialist==='string'&&requestedSpecialist.trim()?`\nUser requested specialist focus: ${requestedSpecialist.trim()}`:'';
@@ -84,6 +85,7 @@ export class Orchestrator {
   if(!overrideStore.applyUserOverride)throw new Error('OVERRIDE_PERSISTENCE_UNAVAILABLE');
   const workflow=await this.store.getWorkflow(workflowId);
   if(!workflow)throw new Error('WORKFLOW_NOT_FOUND');
+  assertWorkflowPrincipal(workflow,principal);
   const raw=workflow.context as any;
   const repositoryId=raw?.resolvedRepository?.repositoryId??raw?.repositoryId;
   const repo=repositoryId&&this.registry?resolveRepository(repositoryId,this.registry):raw?.resolvedRepository;
