@@ -279,3 +279,105 @@ canonical registry, routing policy, runtime metadata, corpus coverage, and
 workflow integrations with this product definition. Until then, current
 production behavior remains limited to the implemented registry and workflow
 contracts described above.
+
+## Canonical Product and MVP Interpretation
+
+This section records the product interpretation supported by this document and
+the current README. It distinguishes the intended specialist ecosystem from
+the smaller workflow that is currently executable.
+
+### Product definition
+
+- **Product:** GPT Command Center, an orchestration and evidence-gated
+  workflow system for routing a user's request to the appropriate specialist
+  and, when authorized and applicable, carrying the work through Codex and
+  validation.
+- **Primary user:** A person submitting a task that may require a domain
+  specialist, repository work, planning, or a builder utility. The source
+  materials do not define a narrower persona or a separate multi-user product
+  segment.
+- **Core problem:** A request should reach the right GPT-owned intent area,
+  remain within approved authority, and produce a reviewable outcome instead
+  of an unbounded or opaque handoff.
+- **Core workflow:** request intake → canonical routing → focused
+  clarification or approval when required → specialist analysis → optional
+  Codex prompt/build execution → validation → result, evidence, or explicit
+  manual handoff.
+- **User-visible output:** A routed workflow with its current status,
+  specialist decision/history, clarification or approval state, events, and
+  final artifacts/results or a deterministic failure/manual-handoff outcome.
+- **Human-in-the-loop:** Humans may clarify routing, override the selected
+  specialist, approve materially changed protected actions, inspect results,
+  and recover uncertain work. An override changes routing policy state; it does
+  not itself execute a specialist.
+- **Codex role:** Codex is execution machinery for implementation handoff and
+  repository work, not a logical routing specialist.
+- **Deployment boundary:** Local mode may use the non-durable MemoryStore for
+  development/test use. Deployed operation requires PostgreSQL, token
+  authentication, approved repository policy, and the configured runtime
+  prerequisites.
+
+### MVP definition
+
+The source-supported MVP is the smallest safe version of the Command Center
+that accepts a task, routes it through an approved specialist contract, and
+returns durable evidence about the outcome.
+
+**Must have**
+
+- authenticated request intake and authorized repository/resource context;
+- canonical specialist selection with explicit no-match and clarification
+  outcomes;
+- durable workflow state, routing history, clarification, approval, attempt,
+  event, and artifact/result records in deployed mode;
+- state-valid specialist execution and, for software delivery, the
+  specialist → prompt-builder → Codex → validation path;
+- user-visible workflow status, results, evidence, and manual-handoff/failure
+  outcomes;
+- canonical runtime/capability binding, bounded repository execution, and
+  recovery-safe authorization.
+
+**Should have**
+
+- explicit user override with stale-decision protection;
+- approval gates for materially changed protected actions;
+- specialist inventory/readiness reporting;
+- routing evaluation and release-quality reporting.
+
+**Later / post-MVP**
+
+- activating additional specialist runtimes beyond the currently configured
+  runtime evidence;
+- standalone direct production support for every builder/workflow utility;
+- broader multi-stage workflows beyond the implemented `SOFTWARE_DELIVERY`
+  contract;
+- specialist creation or registry mutation, equivalent-specialist sets, and
+  automatic generic fallback ownership.
+
+**Non-goals**
+
+- treating navigation/share URLs as executable runtimes;
+- making Codex a routing specialist;
+- auto-approving discovered specialists;
+- silently routing `NO_MATCH` requests to an unrelated specialist;
+- presenting the orchestration service as a general-purpose unrestricted
+  agent or as a replacement for human approval of consequential actions.
+
+### Current implementation status
+
+- **Implemented:** canonical registry and routing, clarification and approval
+  gates, authorization, durable PostgreSQL workflow/evidence persistence,
+  bounded software-delivery orchestration, Codex handoff/execution stages,
+  validation, recovery/manual handoff, and operational readiness controls.
+- **Partially implemented:** the broader 25-entry ecosystem is represented
+  canonically and logically routable where approved, but most entries have no
+  configured executable runtime; direct standalone paths for some utilities
+  remain future work.
+- **Product-critical gap:** none for the documented software-delivery MVP;
+  deployment credentials/provider connectivity and production backup/restore
+  remain operational validation conditions rather than product-definition
+  gaps.
+- **Scope caution:** security, persistence, and recovery controls are enabling
+  infrastructure. They should remain invisible to the normal MVP user
+  experience and should not displace implementation of missing user-facing
+  product surfaces in future planning.
