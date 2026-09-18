@@ -16,7 +16,7 @@ test('Task 24 live PostgreSQL persistence, concurrency, rollback, and aggregatio
   const store=new PgStore(url);const requestId=randomUUID();
   try{
     await store.verifySchema();
-    const dynamic=buildDynamicSpecialist(interpretation,`task24-${requestId}`);dynamic.capabilities=['database certification'];
+    const dynamic=buildDynamicSpecialist(interpretation,requestId);dynamic.capabilities=['database certification'];
     const results=await Promise.all([store.createDynamicSpecialist(dynamic),store.createDynamicSpecialist(dynamic)]);
     assert.equal(results[0].id, dynamic.id);assert.equal(results[1].id,dynamic.id);
     assert.ok((await store.getEffectiveSpecialists())[dynamic.id]);
