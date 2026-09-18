@@ -44,7 +44,7 @@ Readiness behavior:
 
 ## Production operations
 
-PostgreSQL is the durable production source of truth; `MemoryStore` is available only in explicitly selected local mode and is not restart-durable. Apply migrations `001` through `008` before starting a deployed instance. The application verifies database connectivity and required tables before it begins listening, while `/health` reports process liveness and `/ready` reports dependency/inventory readiness. Multi-specialist plans, stages, attempts, and stage-bound artifacts restore together with the workflow; uncertain runtime work follows manual-handoff recovery semantics.
+PostgreSQL is the durable production source of truth; `MemoryStore` is available only in explicitly selected local mode and is not restart-durable. Apply migrations `001` through `008` before starting a deployed instance. The application verifies database connectivity and required tables before it begins listening, while `/health` reports process liveness and `/ready` reports dependency/inventory readiness. Multi-specialist plans, stages, attempts, and stage-bound artifacts restore together with the workflow; completed software plans produce a bounded, labeled specialist-context artifact for Codex Prompt Builder. Uncertain runtime work follows manual-handoff recovery semantics.
 
 ## Release validation
 

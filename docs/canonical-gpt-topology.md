@@ -390,6 +390,10 @@ authorization, and recovery boundaries; they are not caller-authored DAGs.
 The software-delivery workflow remains the supported Codex vertical slice, and
 specialists without an approved active runtime produce truthful manual handoff
 rather than fabricated execution.
+For software plans, completed specialist outputs are deterministically ordered,
+provenance-labeled, size-bounded, and persisted as a multi-specialist context
+artifact before Prompt Builder runs. Single-specialist workflows retain their
+existing handoff.
 - **Scope caution:** security, persistence, and recovery controls are enabling
   infrastructure. They should remain invisible to the normal MVP user
   experience and should not displace implementation of missing user-facing
