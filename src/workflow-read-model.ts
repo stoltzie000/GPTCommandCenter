@@ -2,6 +2,7 @@ import { OrchestrationPlan, OrchestrationPlanStage, Workflow, RuntimeStatus } fr
 import { resolveRoutableSpecialist } from './registry.js';
 import { registry as builtInRegistry } from './registry.js';
 import { Specialist } from './domain.js';
+import { readSpecialist } from './specialist-read-model.js';
 import { OrchestrationPlanStore, PersistenceStore, RoutingHistoryStore } from './store.js';
 
 export interface WorkflowReadModel {
@@ -27,7 +28,7 @@ export interface WorkflowReadModel {
   approvalRequired: boolean;
   createdAt: string;
   updatedAt: string;
-  orchestrationPlan?: { plan: OrchestrationPlan; stages: OrchestrationPlanStage[] };
+  orchestrationPlan?: { plan: OrchestrationPlan; stages: Array<OrchestrationPlanStage & { manualHandoff?: { available:boolean; specialistId:string; specialistName:string; expectedOutput?:string; navigationUrl?:string; instructions?:string; returnEndpoint?:string } }> };
 }
 
 export async function readWorkflow(store: PersistenceStore & Partial<RoutingHistoryStore>, workflow: Workflow, catalog: Record<string, Specialist> = builtInRegistry): Promise<WorkflowReadModel> {
@@ -40,8 +41,9 @@ export async function readWorkflow(store: PersistenceStore & Partial<RoutingHist
   const completed = workflow.status === 'COMPLETE' || attempts.some(attempt => attempt.state === 'SUCCEEDED');
   const planStore=store as PersistenceStore&Partial<OrchestrationPlanStore>;
   const plan=await planStore.getOrchestrationPlan?.(workflow.id);
-  const orchestrationPlan=plan?{plan,stages:await planStore.getOrchestrationPlanStages!(plan.id)}:undefined;
-  const specialistRead = specialist ? (await import('./specialist-read-model.js')).readSpecialist(specialist) : undefined;
+  const planStages=plan?await planStore.getOrchestrationPlanStages!(plan.id):[];
+  const orchestrationPlan=plan?{plan,stages:planStages.map(stage=>{const stageSpecialist=resolveRoutableSpecialist(stage.specialistId,catalog);const stageRead=stageSpecialist?readSpecialist(stageSpecialist):undefined;const available=workflow.status==='MANUAL_HANDOFF_REQUIRED'&&stage.status==='MANUAL_HANDOFF_REQUIRED'&&!!stageRead?.manualHandoff.available;return {...stage,...(stage.status==='MANUAL_HANDOFF_REQUIRED'?{manualHandoff:{available,specialistId:stage.specialistId,specialistName:stageSpecialist?.displayName??stage.specialistId,...(available?{expectedOutput:workflow.workflowType==='software'?'SoftwareOutput JSON: objective, requirements, constraints, affected_components, security_requirements, test_requirements, acceptance_criteria, validation_required, validation_reason.':'A bounded result summary or structured JSON object.',...(stageRead?.manualHandoff.navigationUrl?{navigationUrl:stageRead.manualHandoff.navigationUrl}:{}),instructions:`Complete the task with ${stageSpecialist?.displayName??stage.specialistId}, then submit the result for stage ${stage.id}.`,returnEndpoint:`/v1/workflows/${workflow.id}/plans/${plan.id}/stages/${stage.id}/handoff-response`}: {})}}: {})};})}:undefined;
+  const specialistRead = specialist ? readSpecialist(specialist) : undefined;
   const handoffAvailable = workflow.status === 'MANUAL_HANDOFF_REQUIRED' && !!specialistRead?.manualHandoff.available && !orchestrationPlan;
   return {
     id: workflow.id,

@@ -38,12 +38,22 @@ async function renderSpecialist(workflow) {
 }
 function renderActions(workflow) {
   const actions = $('next-actions'); actions.replaceChildren();
-  const canRun = ['ROUTED', 'SPECIALIST_COMPLETE', 'CODEX_PROMPT_READY'].includes(workflow.status);
+  const canRun = ['ROUTED', 'SPECIALIST_RUNNING', 'SPECIALIST_COMPLETE', 'CODEX_PROMPT_READY'].includes(workflow.status);
   if (canRun) { const button = node('button', workflow.status === 'ROUTED' ? 'Run specialist' : 'Continue workflow'); button.onclick = () => runWorkflow(); actions.append(button); }
   if (workflow.status === 'FAILED') { const button = node('button', 'Request recovery', 'secondary'); button.onclick = () => recoverWorkflow(); actions.append(button); }
   if (!actions.children.length && !terminal.has(workflow.status)) actions.append(node('p', 'The backend is processing this workflow. This page will refresh automatically.', 'muted'));
 }
-function renderPlan(workflow) {
+function renderStageHandoff(workflow, stage, parent) {
+  const handoff = stage.manualHandoff; if (!handoff) return;
+  const box = node('div', undefined, 'stage-handoff'); box.append(node('strong', `Manual handoff for ${stage.id}`), node('p', handoff.available ? `GPTCC selected ${handoff.specialistName}; automatic execution is unavailable.` : 'This stage requires manual intervention, but no safe return path is available.'));
+  if (!handoff.available) { box.append(node('p', 'Do not submit output through this client for this stage.', 'warning')); parent.append(box); return; }
+  if (handoff.navigationUrl) { const link = node('a', `Open ${handoff.specialistName} in ChatGPT`); link.href = handoff.navigationUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; box.append(link); }
+  const packageText = JSON.stringify({ workflowId: workflow.id, planId: workflow.orchestrationPlan.plan.id, planVersion: workflow.orchestrationPlan.plan.version, stageId: stage.id, specialistId: stage.specialistId, purpose: stage.purpose, expectedOutput: handoff.expectedOutput, instructions: handoff.instructions }, null, 2);
+  const copy = node('button', 'Copy stage handoff context', 'secondary'); copy.onclick = async () => { try { await navigator.clipboard.writeText(packageText); copy.textContent = 'Copied'; } catch { showError('workflow-error', 'Clipboard access was unavailable; copy the displayed context manually.'); } };
+  const pre = node('pre', packageText, 'handoff-package'); box.append(pre, copy);
+  const form = node('form', undefined, 'inline-form'); const output = node('textarea'); output.required = true; output.maxLength = 100000; output.rows = 7; output.placeholder = 'Paste the selected specialist output here'; const submit = node('button', 'Submit stage output'); form.append(output, submit); form.onsubmit = async (event) => { event.preventDefault(); submit.disabled = true; try { await api(handoff.returnEndpoint, { method: 'POST', body: JSON.stringify({ output: output.value }) }); await refresh(); } catch (error) { showError('workflow-error', error.message); submit.disabled = false; } }; box.append(node('p', 'Submitted output is externally supplied and is not represented as authenticated provider execution.'), form); parent.append(box);
+}
+async function renderPlan(workflow) {
   const section = $('plan'); section.replaceChildren(); setHidden(section, !workflow.orchestrationPlan); if (!workflow.orchestrationPlan) return;
   section.append(node('h3', 'Orchestration plan'));
   const stages = node('ol', undefined, 'stage-list');
@@ -51,6 +61,7 @@ function renderPlan(workflow) {
     const item = node('li'); item.append(node('strong', `${stage.stageId}: ${stage.purpose || stage.stageType || 'Stage'}`));
     item.append(node('span', `Specialist: ${stage.specialistId || 'platform stage'} · ${stage.status || 'pending'}`, 'muted'));
     if (stage.dependencies?.length) item.append(node('span', `After: ${stage.dependencies.join(', ')}`, 'muted'));
+    renderStageHandoff(workflow, stage, item);
     stages.append(item);
   }
   section.append(stages);
@@ -68,7 +79,7 @@ async function renderApproval(workflow) {
   } catch (error) { section.append(node('p', `Approval is required, but it could not be loaded: ${error.message}`, 'error')); }
 }
 async function renderHandoff(workflow) {
-  const section = $('handoff'); section.replaceChildren(); setHidden(section, workflow.status !== 'MANUAL_HANDOFF_REQUIRED'); if (workflow.status !== 'MANUAL_HANDOFF_REQUIRED') return;
+  const section = $('handoff'); section.replaceChildren(); setHidden(section, workflow.status !== 'MANUAL_HANDOFF_REQUIRED' || !!workflow.orchestrationPlan); if (workflow.status !== 'MANUAL_HANDOFF_REQUIRED' || workflow.orchestrationPlan) return;
   try { const handoff = await api(`/v1/workflows/${encodeURIComponent(workflow.id)}/handoff`); section.append(node('h3', 'Manual specialist handoff'));
     if (!handoff.available) { section.append(node('p', 'This workflow needs manual intervention. Stage-level return is not supported for this orchestration plan; no unsafe submission form is shown.', 'warning')); return; }
     section.append(node('p', 'GPTCC selected this specialist, but did not execute it automatically. Opening the link does not transfer data or return output automatically.'));
@@ -87,7 +98,7 @@ async function renderResult(workflow) {
 async function renderEvents(workflow) { try { const events = await api(`/v1/workflows/${encodeURIComponent(workflow.id)}/events`); const target = $('events'); target.replaceChildren(); for (const event of events || []) { const row = node('div', undefined, 'event'); row.append(node('time', event.occurredAt || event.createdAt || ''), node('span', event.type || event.eventType || 'event')); target.append(row); } } catch { /* timeline is supplemental */ } }
 async function refresh() {
   if (!state.workflowId) return;
-  try { const workflow = await api(`/v1/workflows/${encodeURIComponent(state.workflowId)}`); state.workflow = workflow; renderSummary(workflow); renderActions(workflow); renderPlan(workflow); await Promise.all([renderSpecialist(workflow), renderClarification(workflow), renderApproval(workflow), renderHandoff(workflow), renderResult(workflow), renderEvents(workflow)]); showError('workflow-error', ''); if (terminal.has(workflow.status) && state.timer) { clearInterval(state.timer); state.timer = null; } } catch (error) { showError('workflow-error', `Could not load workflow: ${error.message}`); }
+  try { const workflow = await api(`/v1/workflows/${encodeURIComponent(state.workflowId)}`); state.workflow = workflow; renderSummary(workflow); renderActions(workflow); await renderPlan(workflow); await Promise.all([renderSpecialist(workflow), renderClarification(workflow), renderApproval(workflow), renderHandoff(workflow), renderResult(workflow), renderEvents(workflow)]); showError('workflow-error', ''); if (terminal.has(workflow.status) && state.timer) { clearInterval(state.timer); state.timer = null; } } catch (error) { showError('workflow-error', `Could not load workflow: ${error.message}`); }
 }
 async function runWorkflow() { try { await api(`/v1/workflows/${encodeURIComponent(state.workflowId)}/run`, { method: 'POST', body: '{}' }); await refresh(); } catch (error) { showError('workflow-error', error.message); } }
 async function recoverWorkflow() { try { await api(`/v1/workflows/${encodeURIComponent(state.workflowId)}/recover`, { method: 'POST', body: JSON.stringify({ reason: 'User requested recovery review' }) }); await refresh(); } catch (error) { showError('workflow-error', error.message); } }

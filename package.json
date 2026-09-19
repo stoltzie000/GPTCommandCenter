@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
     "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:browser": "npm run build && node --test dist/tests/task27-browser.acceptance.test.js",
     "test:postgres-certify": "npm run build && node scripts/postgres-certify.mjs",
     "test:routing-eval": "npm run build && node dist/src/routing-evaluation-runner.js",
     "report:routing-release": "npm run build && node dist/src/routing-release-report-runner.js",
