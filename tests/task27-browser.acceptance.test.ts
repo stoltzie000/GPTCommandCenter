@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
 const require=createRequire(import.meta.url);
 let playwright:any;
 try{playwright=require('playwright');}catch{playwright=undefined;}
+const browserAvailable=!!playwright&&existsSync(playwright.chromium.executablePath());
 
-if(!playwright){
-  test('Task 27 browser acceptance requires Playwright and a browser binary',{skip:'Playwright is not installed in this environment'},()=>{});
+if(!playwright||!browserAvailable){
+  if(process.env.REQUIRE_BROWSER_CERTIFICATION==='1') test('mandatory browser certification requires Playwright and a browser binary',()=>{throw new Error('BROWSER_CERTIFICATION_REQUIRES_BROWSER');});
+  else test('Task 27 browser acceptance requires Playwright and a browser binary',{skip:'Playwright or a browser binary is unavailable in this environment'},()=>{});
 }else{
   test('MVP browser journey completes a multi-specialist manual stage return',async()=>{
     let stageComplete=false;const workflowId='task27-browser-workflow';const planId='task27-browser-plan';const stageId='task27-browser-stage';

@@ -8,12 +8,22 @@
     "start": "node dist/src/server.js",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "test:browser": "npm run build && node --test dist/tests/task27-browser.acceptance.test.js",
+    "test:browser-certify": "npm run build && node scripts/browser-certify.mjs",
     "test:postgres-certify": "npm run build && node scripts/postgres-certify.mjs",
     "test:routing-eval": "npm run build && node dist/src/routing-evaluation-runner.js",
     "report:routing-release": "npm run build && node dist/src/routing-release-report-runner.js",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
-  "engines": { "node": ">=20" },
-  "dependencies": { "pg": "^8.13.1" },
-  "devDependencies": { "@types/node": "^22.10.2", "@types/pg": "^8.11.10", "typescript": "^5.7.2" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "playwright": "^1.55.0",
+    "typescript": "^5.7.2"
+  }
 }

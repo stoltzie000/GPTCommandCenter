@@ -45,3 +45,17 @@ jobs:
           PG_CERT_RESTORE_URL: postgresql://gptcc_test:gptcc_test@127.0.0.1:5432/gptcc_restore
           PG_CERT_DUMP_FILE: ${{ runner.temp }}/gptcc-task24.dump
         run: npm run test:postgres-certify
+
+  browser-certification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium for mandatory browser certification
+        run: npx playwright install --with-deps chromium
+      - name: Run mandatory MVP browser certification
+        run: npm run test:browser-certify
