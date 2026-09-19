@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { Orchestrator } from './orchestrator.js';
 import { ApprovalStore, ClarificationStore, MemoryStore, PersistenceStore } from './store.js';
 import { UnavailableCodex, UnavailableSpecialist, SafePromptBuilder, UnavailableValidation, OpenAISpecialistExecutor, OpenAIValidationExecutor, RootlessContainerCodexExecutor } from './executors.js';
@@ -17,10 +19,25 @@ const codex=process.env.CODEX_ENABLED==='true'?new RootlessContainerCodexExecuto
 const app=new Orchestrator(store,specialist,new SafePromptBuilder(),codex,validation,config.repositories); const token=config.apiToken;
 let shuttingDown=false;
 function json(res:any,status:number,body:unknown){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}
+const clientAssets:Record<string,{file:string;type:string}>={
+  '/':{file:'index.html',type:'text/html; charset=utf-8'},
+  '/app.js':{file:'app.js',type:'text/javascript; charset=utf-8'},
+  '/styles.css':{file:'styles.css',type:'text/css; charset=utf-8'}
+};
+async function serveClient(req:any,res:any):Promise<boolean>{
+  if(req.method!=='GET')return false;
+  const asset=clientAssets[req.url??''];
+  if(!asset)return false;
+  try{
+    const body=await readFile(resolve(process.cwd(),'client',asset.file),'utf8');
+    res.writeHead(200,{'content-type':asset.type,'cache-control':'no-store'});res.end(body);return true;
+  }catch{return false;}
+}
 function assertAllowedKeys(body:any,allowed:readonly string[]){if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!allowed.includes(key)))throw new Error('INVALID_REQUEST');}
 async function persistedReadModel(id:string,principal:any){const persisted=await store.getWorkflow(id);if(!persisted)throw new Error('WORKFLOW_NOT_FOUND');assertWorkflowPrincipal(persisted,principal);return readWorkflow(store,persisted,await app.getSpecialistCatalog());}
 async function commandResponse(id:string,decisionId:string,principal:any){const workflow=await persistedReadModel(id,principal);const decisions=await readRoutingDecisions(store,id);return {...workflow,workflow,decision:decisions.find(decision=>decision.id===decisionId)};}
 const server=createServer(async(req,res)=>{try{
+  if(await serveClient(req,res))return;
   if(req.url==='/health'&&req.method==='GET')return json(res,200,{status:'ok'});
   if(shuttingDown)return json(res,503,{status:'shutting_down'});
   if(req.url==='/ready'&&req.method==='GET'){

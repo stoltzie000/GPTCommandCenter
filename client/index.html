@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GPT Command Center</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">GPT COMMAND CENTER</p>
+        <h1>Describe the work. Follow the evidence.</h1>
+        <p class="lede">GPTCC routes your request to the right specialist, coordinates supported execution, and tells you when a human handoff is required.</p>
+      </header>
+
+      <section id="intake" class="card">
+        <h2>Start a workflow</h2>
+        <form id="task-form">
+          <label>Repository or resource
+            <input id="repository" name="repository" required autocomplete="off" placeholder="configured repository id">
+          </label>
+          <label>What should GPTCC do?
+            <textarea id="objective" name="objective" required rows="6" maxlength="100000" placeholder="Describe the outcome you need..."></textarea>
+          </label>
+          <div class="form-grid">
+            <label>Workflow type
+              <select id="workflow-type" name="workflow_type">
+                <option value="software">Software delivery</option>
+                <option value="non_code">General task</option>
+              </select>
+            </label>
+            <label class="check"><input id="requires-implementation" type="checkbox"> Requires implementation</label>
+          </div>
+          <label class="token-field">Deployment session token <span>(optional; kept in memory only)</span>
+            <input id="session-token" type="password" autocomplete="off" placeholder="not saved by this client">
+          </label>
+          <button type="submit">Create workflow</button>
+        </form>
+        <p id="intake-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section id="workflow-panel" class="card" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">WORKFLOW</p><h2 id="workflow-title">Loading…</h2></div>
+          <button id="new-workflow" class="secondary" type="button">New workflow</button>
+        </div>
+        <div id="workflow-summary"></div>
+        <div id="next-actions" class="actions"></div>
+        <div id="clarification" hidden></div>
+        <div id="approval" hidden></div>
+        <div id="handoff" hidden></div>
+        <div id="plan" hidden></div>
+        <div id="result" hidden></div>
+        <details class="technical"><summary>Technical timeline</summary><div id="events"></div></details>
+        <p id="workflow-error" class="error" role="alert" hidden></p>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
