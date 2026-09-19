@@ -6,17 +6,18 @@ import { Orchestrator } from '../src/orchestrator.js';
 import { SafePromptBuilder, UnavailableCodex, UnavailableSpecialist, UnavailableValidation } from '../src/executors.js';
 import { freezeCreationContext } from '../src/trust.js';
 import { buildOrchestrationPlan } from '../src/orchestration-plan.js';
+import { buildMultiSpecialistContext } from '../src/codex-aggregation.js';
 import { registry } from '../src/registry.js';
 
 const url=process.env.PG_TEST_URL;
 const principal={id:'task28-user',roles:['developer'] as const,scopes:['workflow:create','run'] as const,authType:'local' as const};
 const repository={repositoryId:'task28-repo',source:'./task28-repo',classification:'PUBLIC' as const,allowedCallers:['task28-user'],allowedExecutionTypes:['specialist' as const]};
-const output={summary:'externally supplied security review',findings:['preserve authorization']};
+const output={objective:'certify stage handoff',requirements:['preserve authorization'],constraints:[],affected_components:['workflow handoff'],security_requirements:['retain principal and stage binding'],test_requirements:['validate persisted provenance'],acceptance_criteria:['manual output is externally attributed'],validation_required:false,validation_reason:''};
 
 async function fixture(store:PgStore){
   const requestId=randomUUID();
   const context=freezeCreationContext({principal,operation:'create',requestId,executionType:'specialist',effectiveClassification:'PUBLIC'},repository);
-  const workflow=await store.createWorkflow({requestId,workflowType:'non_code',logicalSpecialistId:'architecture-security-advisor',runtimeId:undefined,validationRequired:false,effectiveClassification:'PUBLIC',objective:'certify stage handoff',context,requiresImplementation:false},principal.id,'create',requestId);
+  const workflow=await store.createWorkflow({requestId,workflowType:'software',logicalSpecialistId:'architecture-security-advisor',runtimeId:undefined,validationRequired:false,effectiveClassification:'PUBLIC',objective:'certify stage handoff',context,requiresImplementation:true},principal.id,'create',requestId);
   const built=buildOrchestrationPlan(workflow.id,[{specialistId:'architecture-security-advisor',rank:1,matchReason:'security review',evidence:{} as any},{specialistId:'github-oracle',rank:2,matchReason:'repository context',evidence:{} as any}],registry);
   await store.createOrchestrationPlan(built.plan,built.stages);
   await store.updateOrchestrationPlanStage(built.plan.id,built.stages[0].id,'MANUAL_HANDOFF_REQUIRED');
@@ -33,7 +34,8 @@ test('Task 28 live PostgreSQL stage return persists, reloads, authorizes, and re
     await assert.rejects(()=>app.acceptManualStageHandoff(state.workflow!.id,state.plan.id,state.stage.id,output,{...principal,id:'other-user'}),/AUTHORIZATION_FAILED/);
     await assert.rejects(()=>store.acceptManualStageHandoff(state.workflow!.id,state.plan.id,0,state.stage.id,output,principal.id),/MANUAL_STAGE_HANDOFF_PLAN_MISMATCH/);
     const accepted=await app.acceptManualStageHandoff(state.workflow!.id,state.plan.id,state.stage.id,output,principal);assert.equal(accepted.status,'SPECIALIST_RUNNING');
-    reloaded=new PgStore(url);const persisted=await reloaded.getArtifacts(state.workflow!.id);const artifact=persisted.find(item=>item.planStageId===state.stage.id);assert.equal(artifact?.artifactType,'manual_specialist_output');assert.equal(artifact?.planId,state.plan.id);assert.equal(artifact?.specialistId,state.stage.specialistId);assert.equal((await reloaded.getOrchestrationPlanStages(state.plan.id)).find(stage=>stage.id===state.stage.id)?.status,'COMPLETE');
+    reloaded=new PgStore(url);const persisted=await reloaded.getArtifacts(state.workflow!.id);const artifact=persisted.find(item=>item.planStageId===state.stage.id);assert.equal(artifact?.artifactType,'manual_specialist_output');assert.equal(artifact?.planId,state.plan.id);assert.equal(artifact?.specialistId,state.stage.specialistId);const reloadedStages=await reloaded.getOrchestrationPlanStages(state.plan.id);assert.equal(reloadedStages.find(stage=>stage.id===state.stage.id)?.status,'COMPLETE');assert.equal(reloadedStages.find(stage=>stage.id!==state.stage.id)?.status,'PENDING');
+    const dependent=reloadedStages.find(stage=>stage.id!==state.stage.id)!;const dependentArtifact=await reloaded.addArtifact(state.workflow!.id,'orchestration_specialist_output',output,{planId:state.plan.id,planStageId:dependent.id,specialistId:dependent.specialistId});await reloaded.updateOrchestrationPlanStage(state.plan.id,dependent.id,'COMPLETE',dependentArtifact.id);await reloaded.updateOrchestrationPlan(state.plan.id,'COMPLETE');const aggregate=buildMultiSpecialistContext((await reloaded.getWorkflow(state.workflow!.id))!, (await reloaded.getOrchestrationPlan(state.workflow!.id))!, await reloaded.getOrchestrationPlanStages(state.plan.id), await reloaded.getArtifacts(state.workflow!.id));assert.equal(aggregate.contributions[0].artifactType,'manual_specialist_output');assert.equal(aggregate.contributions[0].artifactId,artifact?.id);
     const repeated=new Orchestrator(reloaded,new UnavailableSpecialist(),new SafePromptBuilder(),new UnavailableCodex(),new UnavailableValidation(),{'task28-repo':repository});assert.equal((await repeated.acceptManualStageHandoff(state.workflow!.id,state.plan.id,state.stage.id,output,principal)).id,accepted.id);await assert.rejects(()=>repeated.acceptManualStageHandoff(state.workflow!.id,state.plan.id,state.stage.id,{summary:'conflicting'},principal),/MANUAL_STAGE_HANDOFF_ALREADY_ACCEPTED/);assert.equal((await reloaded.getArtifacts(state.workflow!.id)).filter(item=>item.planStageId===state.stage.id).length,1);
   }finally{await reloaded?.pool.end();await store.pool.end();architecture.runtimeStatus=old.runtimeStatus;architecture.chatgptUrl=old.chatgptUrl;}
 });
