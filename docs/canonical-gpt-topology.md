@@ -258,7 +258,14 @@ current authorization policy, server-derived Principal, trusted
 evidence-gated lifecycle controls.
 
 Navigation or share URLs are manual destinations only; they are not executable
-API endpoints.
+APIs. When a safe ChatGPT custom-GPT URL is configured for a non-executable
+specialist, the workflow exposes a manual-handoff package containing the
+selected identity, bounded task objective, navigation link, and authorized
+return endpoint. Returned output is stored as explicitly user-submitted
+`manual_specialist_output` evidence; it is not represented as provider
+execution. Single-specialist software workflows may resume into the existing
+Codex Prompt Builder path after that artifact is accepted. Multi-specialist
+plan handoff remains manual-only until a plan-stage return contract is added.
 
 ## Pending Review
 

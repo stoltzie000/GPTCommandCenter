@@ -22,6 +22,7 @@ export interface WorkflowReadModel {
     completed: boolean;
     manualHandoffRequired: boolean;
   };
+  manualHandoff?: { available:boolean; specialistId:string|null; task?:{objective:string;workflowType:Workflow['workflowType'];requiresImplementation:boolean}; expectedOutput?:string; navigationUrl?:string; instructions?:string; returnEndpoint?:string };
   clarificationRequired: boolean;
   approvalRequired: boolean;
   createdAt: string;
@@ -40,6 +41,8 @@ export async function readWorkflow(store: PersistenceStore & Partial<RoutingHist
   const planStore=store as PersistenceStore&Partial<OrchestrationPlanStore>;
   const plan=await planStore.getOrchestrationPlan?.(workflow.id);
   const orchestrationPlan=plan?{plan,stages:await planStore.getOrchestrationPlanStages!(plan.id)}:undefined;
+  const specialistRead = specialist ? (await import('./specialist-read-model.js')).readSpecialist(specialist) : undefined;
+  const handoffAvailable = workflow.status === 'MANUAL_HANDOFF_REQUIRED' && !!specialistRead?.manualHandoff.available && !orchestrationPlan;
   return {
     id: workflow.id,
     requestId: workflow.requestId,
@@ -54,6 +57,7 @@ export async function readWorkflow(store: PersistenceStore & Partial<RoutingHist
       executable: runtimeStatus === 'ACTIVE'
     },
     execution: { started, completed, manualHandoffRequired: workflow.status === 'MANUAL_HANDOFF_REQUIRED' },
+    ...(workflow.status === 'MANUAL_HANDOFF_REQUIRED' ? {manualHandoff:{available:handoffAvailable,specialistId:selectedSpecialistId,task:{objective:workflow.objective,workflowType:workflow.workflowType,requiresImplementation:workflow.requiresImplementation},...(handoffAvailable?{expectedOutput:workflow.workflowType==='software'?'SoftwareOutput JSON: objective, requirements, constraints, affected_components, security_requirements, test_requirements, acceptance_criteria, validation_required, validation_reason.':'A bounded result summary or structured JSON object.'}:{}),...(handoffAvailable&&specialistRead?.manualHandoff.navigationUrl?{navigationUrl:specialistRead.manualHandoff.navigationUrl}:{}),...(handoffAvailable?{instructions:`Complete the task with ${specialist?.displayName}, then submit the resulting structured output to the workflow return endpoint.`,returnEndpoint:`/v1/workflows/${workflow.id}/handoff-response`}: {})}} : {}),
     clarificationRequired: workflow.status === 'AWAITING_CLARIFICATION',
     approvalRequired: workflow.status === 'AWAITING_APPROVAL',
     createdAt: workflow.createdAt,

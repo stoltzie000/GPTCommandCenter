@@ -58,6 +58,7 @@ export function assertSoftwareDeliveryActivation(workflow: Workflow, target: Exc
     VALIDATION: {status: 'CODEX_COMPLETE', prior: 'codex'}
   };
   const rule = expected[target];
+  if (target === 'PROMPT_BUILD' && workflow.status === 'SPECIALIST_COMPLETE' && artifacts.some(artifact => artifact.artifactType === 'manual_specialist_output')) return;
   const targetIndex = SOFTWARE_DELIVERY_WORKFLOW.stages.findIndex(stage => stage.key === target);
   const priorDefinition = targetIndex > 0 ? SOFTWARE_DELIVERY_WORKFLOW.stages[targetIndex - 1] : undefined;
   if (priorDefinition) assertSoftwareDeliveryTransition(priorDefinition.key, target);

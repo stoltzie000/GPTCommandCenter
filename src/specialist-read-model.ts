@@ -26,7 +26,7 @@ export function readSpecialist(specialist: Specialist): SpecialistReadModel {
   const runtimeStatus = specialist.runtime?.status ?? specialist.runtimeStatus;
   const role = specialist.role ?? 'ROUTABLE_SPECIALIST';
   const routingApproved = specialist.routingApproved ?? role === 'ROUTABLE_SPECIALIST';
-  const manualHandoffAvailable = runtimeStatus === 'MANUAL_ONLY' && typeof specialist.chatgptUrl === 'string' && specialist.chatgptUrl.length > 0;
+  const manualHandoffAvailable = runtimeStatus !== 'ACTIVE' && typeof specialist.chatgptUrl === 'string' && /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)\/g\//.test(specialist.chatgptUrl);
   return {
     id: specialist.specialistId,
     origin: specialist.origin ?? 'BUILTIN',
