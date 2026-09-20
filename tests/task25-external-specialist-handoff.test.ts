@@ -36,7 +36,8 @@ test('manual specialist handoff exposes a bounded package and resumes software d
     const accepted=await app.acceptManualHandoff(workflow.id,output,principal);
     assert.equal(accepted.status,'SPECIALIST_COMPLETE');assert.equal((await store.getArtifacts(workflow.id)).filter(a=>a.artifactType==='manual_specialist_output').length,1);
     await app.run(workflow.id,contextFromWorkflow(accepted,'run','codex',principal),'handoff-owner');
-    assert.equal((await store.getWorkflow(workflow.id))?.status,'FAILED');
+    assert.equal((await store.getWorkflow(workflow.id))?.status,'MANUAL_HANDOFF_REQUIRED');
+    assert.equal((await store.getWorkflow(workflow.id))?.failureCode,'CODEX_RUNTIME_UNAVAILABLE');
     assert.equal((await store.getArtifacts(workflow.id)).some(artifact=>artifact.artifactType==='codex_prompt'),true);
     await assert.rejects(()=>app.acceptManualHandoff(workflow.id,output,principal),/MANUAL_HANDOFF_STATE_UNSAFE/);
   } finally { specialist.runtimeStatus=old.runtimeStatus;specialist.chatgptUrl=old.chatgptUrl; }

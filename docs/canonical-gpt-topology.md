@@ -207,6 +207,15 @@ decisions. The current `SOFTWARE_DELIVERY` definition and evidence-gated
 behavior in `src/predefined-workflow.ts` and `src/orchestrator.ts` remain
 authoritative for implemented workflow behavior.
 
+Codex Prompt Builder persistence is an independently useful boundary: the
+generated `codex_prompt` is retained before any Codex execution attempt. When
+the approved Codex runtime is unavailable, the existing authorized manual
+handoff lifecycle exposes that task for copying and accepts only a typed,
+externally supplied `manual_codex_output` report. Such a report remains
+unverified and requires review. An execution that was actually attempted and
+failed remains `FAILED`; runtime unavailability is not represented as prompt
+generation failure.
+
 ## Current Implementation vs Canonical Product Definition
 
 ### Currently implemented
